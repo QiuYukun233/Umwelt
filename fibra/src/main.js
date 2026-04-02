@@ -63,8 +63,8 @@ class App {
     requestAnimationFrame((timestamp) => this.loop(timestamp));
   }
 
-  evaluateCircuit(sourceOutputs, commit = false) {
-    const { nodeSignals, edgeSignals } = this.graph.computeSignals(sourceOutputs, this.sensorEnabled, { commit });
+  evaluateCircuit(sourceOutputs, commit = false, dt = CONFIG.FIXED_DT) {
+    const { nodeSignals, edgeSignals } = this.graph.computeSignals(sourceOutputs, this.sensorEnabled, { commit, dt });
     const motorInputs = this.graph.getMotorOutputs(nodeSignals);
     const motorLevels = this.world.resolveMotorLevels(motorInputs);
     return { nodeSignals, edgeSignals, motorInputs, motorLevels };

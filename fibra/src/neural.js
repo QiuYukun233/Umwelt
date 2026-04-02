@@ -16,6 +16,17 @@ import {
 } from "./config.js";
 import { clamp, lerp } from "./math.js";
 
+// ── Inter-node dynamics constants (Matsuoka oscillator + PIR rebound) ──
+const INTER_TAU = 1.5;                // membrane time constant (s)
+const INTER_W = 2.0;                  // inhibitory synaptic weight multiplier
+const ADAPT_TAU = 3.0;               // adaptation (fatigue) time constant (s), must be > INTER_TAU
+const ADAPT_BETA = 2.0;              // adaptation strength (subtracts from state drive)
+const REBOUND_G = 3.0;               // rebound conductance
+const REBOUND_RATE = 0.8;            // h accumulation rate per unit inhibitory input per second
+const REBOUND_TAU_DISCHARGE = 0.4;   // h decay time constant when not inhibited (s)
+const REBOUND_MAX = 1.5;             // maximum h value
+const REBOUND_THRESHOLD = 0.5;       // h charges only when state < this
+
 export function cloneConnections(source = {}) {
   return Object.fromEntries(CONNECTION_ORDER.map((key) => [key, source[key] ?? 0]));
 }
@@ -81,6 +92,7 @@ export class NeuralGraph {
     this.nodes = new Map();
     this.edges = new Map();
     this.prevSignals = {};
+    this.interDynamics = new Map(); // nodeId → { state, hRebound, adapt }
     this.nextInterIndex = 1;
     this.nextEdgeIndex = 1;
   }
@@ -89,6 +101,7 @@ export class NeuralGraph {
     this.nodes.clear();
     this.edges.clear();
     this.prevSignals = {};
+    this.interDynamics.clear();
     this.nextInterIndex = 1;
     this.nextEdgeIndex = 1;
     this.ensureAnchors(width, height, true);
@@ -138,6 +151,7 @@ export class NeuralGraph {
     this.nextInterIndex += 1;
     this.nodes.set(node.id, node);
     this.prevSignals[node.id] = 0;
+    this.interDynamics.set(node.id, { state: 0, hRebound: 0, adapt: 0 });
     return node;
   }
 
@@ -163,6 +177,7 @@ export class NeuralGraph {
     if (!node || node.type !== "inter") return;
     this.nodes.delete(nodeId);
     delete this.prevSignals[nodeId];
+    this.interDynamics.delete(nodeId);
     for (const [edgeId, edge] of this.edges) if (edge.fromId === nodeId || edge.toId === nodeId) this.edges.delete(edgeId);
   }
 
@@ -193,26 +208,81 @@ export class NeuralGraph {
     return { start, cp1, cp2, end, label: { x: cp1.x + (cp2.x - cp1.x) * 0.5, y: cp1.y + (cp2.y - cp1.y) * 0.5 }, feedback };
   }
 
-  computeSignals(sourceOutputs, sensorEnabled = {}, { commit = true } = {}) {
+  computeSignals(sourceOutputs, sensorEnabled = {}, { commit = true, dt = 1 / 60 } = {}) {
     const previous = { ...this.prevSignals };
     const nodeSignals = {};
     const edgeSignals = {};
     for (const node of this.nodes.values()) if (node.type === "sensor") nodeSignals[node.id] = this.isNodeActive(node, sensorEnabled) ? (sourceOutputs[node.sourceId] ?? 0) : 0;
     const sorted = [...this.nodes.values()].filter((node) => node.type !== "sensor").sort((a, b) => a.x - b.x || a.y - b.y);
     for (const node of sorted) {
-      let sum = 0;
+      let excitatorySum = 0;
+      let inhibitorySum = 0;
       for (const edge of this.edges.values()) {
         if (edge.toId !== node.id) continue;
         const fromNode = this.nodes.get(edge.fromId);
         const sourceValue = fromNode && fromNode.x >= node.x - 8 ? (previous[edge.fromId] ?? 0) : (nodeSignals[edge.fromId] ?? 0);
-        sum += edge.excitatory ? sourceValue : -sourceValue;
+        if (edge.excitatory) excitatorySum += sourceValue;
+        else inhibitorySum += sourceValue;
         edgeSignals[edge.id] = Math.abs(nodeSignals[edge.fromId] ?? previous[edge.fromId] ?? 0);
       }
-      nodeSignals[node.id] = node.type === "inter" ? clamp(sum, 0, 1) : sum;
+      if (node.type === "inter") {
+        nodeSignals[node.id] = this._updateInterDynamics(node.id, excitatorySum, inhibitorySum, dt, commit);
+      } else {
+        nodeSignals[node.id] = excitatorySum - inhibitorySum;
+      }
     }
     for (const edge of this.edges.values()) if (edgeSignals[edge.id] === undefined) edgeSignals[edge.id] = Math.abs(nodeSignals[edge.fromId] ?? previous[edge.fromId] ?? 0);
     if (commit) this.prevSignals = { ...nodeSignals };
     return { nodeSignals, edgeSignals };
+  }
+
+  /**
+   * Matsuoka oscillator with post-inhibitory rebound (PIR) for a single inter node.
+   *
+   * State equation (Matsuoka form):
+   *   τ · dx/dt = -x + (excitation - W·inhibition) - β·v + g·h
+   *
+   * Adaptation (fatigue):  τ_v · dv/dt = -v + y        where y = max(0, x)
+   *
+   * Rebound h:  accumulates proportionally to inhibitory input while state < threshold,
+   *             decays exponentially otherwise.  Cumulative (not target-tracking) so h
+   *             can exceed the instantaneous inhibitory signal — this is the key mechanism
+   *             that lets rebound overcome sustained inhibition.
+   */
+  _updateInterDynamics(nodeId, excitatorySum, inhibitorySum, dt, commit) {
+    let dyn = this.interDynamics.get(nodeId);
+    if (!dyn) {
+      dyn = { state: 0, hRebound: 0, adapt: 0 };
+      this.interDynamics.set(nodeId, dyn);
+    }
+
+    const prevState = dyn.state;
+
+    // ── rebound potential h (cumulative accumulation) ──
+    let h = dyn.hRebound;
+    if (prevState < REBOUND_THRESHOLD && inhibitorySum > 0) {
+      h += inhibitorySum * REBOUND_RATE * dt;
+    } else {
+      h *= Math.exp(-dt / REBOUND_TAU_DISCHARGE);
+    }
+    h = clamp(h, 0, REBOUND_MAX);
+
+    // ── Matsuoka state integration ──
+    const drive = excitatorySum - INTER_W * inhibitorySum - ADAPT_BETA * dyn.adapt + REBOUND_G * h;
+    let nextState = prevState + (-prevState + drive) * (dt / INTER_TAU);
+    nextState = clamp(nextState, -1, 1);
+
+    // ── adaptation (fatigue) ── tracks rectified output
+    const output = Math.max(0, nextState);
+    const nextAdapt = dyn.adapt + (-dyn.adapt + output) * (dt / ADAPT_TAU);
+
+    if (commit) {
+      dyn.state = nextState;
+      dyn.hRebound = h;
+      dyn.adapt = nextAdapt;
+    }
+
+    return output;
   }
 
   getMotorOutputs(nodeSignals) {
@@ -230,7 +300,8 @@ export class NeuralGraph {
   }
 
   serialize() {
-    return JSON.stringify({ nodes: [...this.nodes.values()], edges: [...this.edges.values()], prevSignals: this.prevSignals, nextInterIndex: this.nextInterIndex, nextEdgeIndex: this.nextEdgeIndex });
+    const interDyn = Object.fromEntries(this.interDynamics);
+    return JSON.stringify({ nodes: [...this.nodes.values()], edges: [...this.edges.values()], prevSignals: this.prevSignals, interDynamics: interDyn, nextInterIndex: this.nextInterIndex, nextEdgeIndex: this.nextEdgeIndex });
   }
 
   deserialize(json) {
@@ -245,6 +316,9 @@ export class NeuralGraph {
       })
     );
     this.prevSignals = { ...(data.prevSignals ?? {}) };
+    this.interDynamics = new Map(Object.entries(data.interDynamics ?? {}).map(
+      ([id, d]) => [id, { state: d.state ?? 0, hRebound: d.hRebound ?? 0, adapt: d.adapt ?? 0 }]
+    ));
     this.nextInterIndex = data.nextInterIndex ?? 1;
     this.nextEdgeIndex = data.nextEdgeIndex ?? 1;
   }
