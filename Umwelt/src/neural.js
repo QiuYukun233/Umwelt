@@ -97,6 +97,15 @@ function clampWeight(weight) {
   return clamp(Number.isFinite(weight) ? weight : 1, EDGE_WEIGHT_MIN, EDGE_WEIGHT_MAX);
 }
 
+// Plastic weights range [0, EDGE_WEIGHT_MAX]; unlike fixed edges they may
+// fully decay to zero. Dale's Law sign (excitatory vs inhibitory) is applied
+// downstream by the evaluator based on source node type, so the magnitude
+// clamp is sign-agnostic. Kept as a separate helper so callers are explicit
+// about which regime a weight lives under.
+function clampToDaleLaw(weight) {
+  return clamp(Number.isFinite(weight) ? weight : 0, 0, EDGE_WEIGHT_MAX);
+}
+
 function nextEdgeWeight(weight) {
   const current = clampWeight(weight);
   const index = EDGE_WEIGHT_STEPS.findIndex((step) => Math.abs(step - current) < 1e-6);
@@ -476,11 +485,35 @@ export class NeuralGraph {
       if (edge.fromId === fromId && edge.toId === toId) return edge;
     }
     const fromType = fromNode.neuronType ?? fromNode.type;
-    const edge = { id: `edge:${this.nextEdgeIndex++}`, fromId, toId, weight: 1 };
+    const edge = { id: `edge:${this.nextEdgeIndex++}`, fromId, toId, weight: 1, plastic: false, mod_source_id: null };
     if (fromType === "inter_inh") edge.excitatory = false;
     else if (fromType === "modulator") edge.modulatory = true;
     else edge.excitatory = true;
     this.edges.set(edge.id, edge);
+    return edge;
+  }
+
+  setEdgePlastic(edgeId, { plastic, modSourceId } = {}) {
+    const edge = this.edges.get(edgeId);
+    if (!edge) return null;
+    if (!plastic) {
+      edge.plastic = false;
+      edge.mod_source_id = null;
+      delete edge.w;
+      return edge;
+    }
+    if (!modSourceId) {
+      console.warn(`setEdgePlastic: plastic=true requires modSourceId (edge ${edgeId})`);
+      return null;
+    }
+    const modNode = this.nodes.get(modSourceId);
+    if (!modNode || (modNode.neuronType ?? modNode.type) !== "modulator") {
+      console.warn(`setEdgePlastic: modSourceId ${modSourceId} is not a modulator node`);
+      return null;
+    }
+    edge.plastic = true;
+    edge.mod_source_id = modSourceId;
+    if (!Number.isFinite(edge.w)) edge.w = clampToDaleLaw(edge.weight);
     return edge;
   }
 
@@ -494,7 +527,12 @@ export class NeuralGraph {
   updateEdgeWeight(edgeId, weight) {
     const edge = this.edges.get(edgeId);
     if (!edge) return null;
-    edge.weight = clampWeight(weight);
+    if (edge.plastic) {
+      edge.weight = clampToDaleLaw(weight);
+      edge.w = edge.weight;
+    } else {
+      edge.weight = clampWeight(weight);
+    }
     return edge;
   }
 
@@ -506,7 +544,18 @@ export class NeuralGraph {
     const node = this.nodes.get(nodeId);
     if (!node || !isEditableNode(node)) return;
     this.nodes.delete(nodeId);
-    for (const [edgeId, edge] of this.edges) if (edge.fromId === nodeId || edge.toId === nodeId) this.edges.delete(edgeId);
+    for (const [edgeId, edge] of this.edges) {
+      if (edge.fromId === nodeId || edge.toId === nodeId) {
+        this.edges.delete(edgeId);
+        continue;
+      }
+      if (edge.plastic && edge.mod_source_id === nodeId) {
+        console.warn(`removeNode: reverting plastic edge ${edgeId} to fixed — modulator ${nodeId} was deleted`);
+        edge.plastic = false;
+        edge.mod_source_id = null;
+        delete edge.w;
+      }
+    }
   }
 
   isNodeActive(node, sensorEnabled) {
