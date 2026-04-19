@@ -1,0 +1,762 @@
+/*
+ * Umwelt observation UI — design tokens as CSS custom properties
+ * Mirrors tokens.js for DOM-rendered components.
+ */
+
+/* ── tokens ─────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ink */
+  --ink-base:    #F5F0E8;
+  --ink-primary: rgba(245, 240, 232, 0.9);
+  --ink-body:    rgba(245, 240, 232, 0.65);
+  --ink-dim:     rgba(245, 240, 232, 0.55);
+  --ink-faint:   rgba(245, 240, 232, 0.28);
+
+  /* panel */
+  --panel-bg:        rgba(20, 18, 16, 0.9);
+  --panel-bg-bottom: rgba(10, 8, 6, 0.9);
+  --panel-divider:   rgba(245, 240, 232, 0.15);
+
+  /* accents */
+  --accent-rec:      #E84B3C;
+  --accent-tracking: #E8B878;
+
+  /* chem overlay */
+  --chem-food:   #8FAE58;
+  --chem-danger: #E84B3C;
+
+  /* neural nodes */
+  --node-sensor:    #D8B060;
+  --node-inter-pos: #8FAE58;
+  --node-inter-neg: #C87050;
+  --node-modulator: #A890BC;
+  --node-motor:     #C68A5E;
+
+  /* per-mode accents */
+  --mode-visible: #E8B878;
+  --mode-ir:      #00D4FF;
+  --mode-lidar:   #D06EE8;
+  --mode-uv:      #A078F0;
+  --mode-gcamp:   #4DE872;
+
+  /* typography */
+  --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'IBM Plex Mono', monospace;
+  --text-xs: 9px;
+  --text-sm: 10px;
+  --text-md: 11px;
+  --text-lg: 13px;
+
+  /* stroke */
+  --stroke-hairline: 0.3px;
+  --stroke-fine:     0.5px;
+  --stroke-line:     1px;
+  --stroke-bold:     1.5px;
+
+  /* layout */
+  --frame-w:      1280px;
+  --frame-h:      720px;
+  --cam-w:        760px;
+  --panel-w:      520px;
+  --inset:        30px;
+  --panel-inset:  24px;
+  --node-row-h:   60px;
+  --node-col:     110px;
+
+  /* legacy tokens consumed by GraphRenderer (readThemeVars) and the
+     full-screen editor overlay (imported from style.css). Mapped to
+     observation design tokens so everything stays on the new palette. */
+  --surface:    rgba(20, 18, 16, 0.95);
+  --surface-2:  rgba(10, 8, 6, 0.95);
+  --border:     rgba(245, 240, 232, 0.15);
+  --border-2:   rgba(245, 240, 232, 0.28);
+  --text:       #F5F0E8;
+  --text-soft:  rgba(245, 240, 232, 0.65);
+  --text-faint: rgba(245, 240, 232, 0.28);
+  --amber:      #E8B878;
+  --mint:       #8FAE58;
+  --red:        #C87050;
+  --brown:      #C68A5E;
+  --blue:       #6f97d8;
+  --bg:         #0A0806;
+  --world:      #141210;
+  --overlay:    rgba(10, 8, 6, 0.85);
+  --panel-shadow: 0 18px 46px rgba(0, 0, 0, 0.4);
+}
+
+/* fonts: loaded via <link> in HTML — do not @import here, it blocks
+   headless browsers and duplicates the request. */
+
+/* ── artboard ───────────────────────────────────────────────────────────── */
+
+.artboard {
+  position: relative;
+  width: var(--frame-w);
+  height: var(--frame-h);
+  background: #000;
+  overflow: hidden;
+  display: flex;
+  font-family: var(--font-ui);
+  color: var(--ink-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── camera viewport ────────────────────────────────────────────────────── */
+
+.cam-viewport {
+  position: relative;
+  width: var(--cam-w);
+  height: var(--frame-h);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.cam-viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── operator panel ─────────────────────────────────────────────────────── */
+
+.neural-panel {
+  position: relative;
+  width: var(--panel-w);
+  height: var(--frame-h);
+  flex-shrink: 0;
+  background: linear-gradient(to bottom, var(--panel-bg), var(--panel-bg-bottom));
+  padding: var(--panel-inset);
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-left: var(--stroke-fine) solid var(--panel-divider);
+  scrollbar-width: none;          /* Firefox */
+}
+.neural-panel::-webkit-scrollbar { display: none; }
+
+.neural-panel-header {
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--ink-primary);
+  margin: 0 0 4px;
+}
+
+.neural-panel-sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+}
+
+.neural-panel-divider {
+  height: 0;
+  border: none;
+  border-top: var(--stroke-fine) solid var(--panel-divider);
+  margin: 16px 0;
+}
+
+/* ── mode switcher ──────────────────────────────────────────────────────── */
+
+.mode-switcher {
+  position: absolute;
+  top: var(--inset);
+  left: var(--inset);
+  display: flex;
+  gap: 2px;
+  z-index: 10;
+}
+
+.mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  border: var(--stroke-fine) solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.14s ease, background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.mode-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mode-btn:hover {
+  color: var(--ink-primary);
+  background: rgba(245, 240, 232, 0.06);
+}
+
+.mode-btn.active {
+  color: var(--accent-tracking);
+  background: rgba(232, 184, 120, 0.1);
+  border-color: rgba(232, 184, 120, 0.7);
+}
+
+/* per-mode active overrides */
+.artboard[data-mode="ir"] .mode-btn.active {
+  color: var(--mode-ir);
+  background: rgba(0, 212, 255, 0.1);
+  border-color: var(--mode-ir);
+}
+.artboard[data-mode="lidar"] .mode-btn.active {
+  color: var(--mode-lidar);
+  background: rgba(208, 110, 232, 0.1);
+  border-color: var(--mode-lidar);
+}
+.artboard[data-mode="uv"] .mode-btn.active {
+  color: var(--mode-uv);
+  background: rgba(160, 120, 240, 0.1);
+  border-color: var(--mode-uv);
+}
+.artboard[data-mode="gcamp"] .mode-btn.active {
+  color: var(--mode-gcamp);
+  background: rgba(77, 232, 114, 0.1);
+  border-color: var(--mode-gcamp);
+}
+
+/* ── mode badge ─────────────────────────────────────────────────────────── */
+
+.mode-badge {
+  position: absolute;
+  top: calc(var(--inset) + 34px);
+  left: var(--inset);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+}
+
+.mode-badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-tracking);
+}
+
+.mode-badge-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  text-transform: lowercase;
+}
+
+/* per-mode badge dot */
+.artboard[data-mode="ir"]    .mode-badge-dot { background: var(--mode-ir); }
+.artboard[data-mode="lidar"] .mode-badge-dot { background: var(--mode-lidar); }
+.artboard[data-mode="uv"]    .mode-badge-dot { background: var(--mode-uv); }
+.artboard[data-mode="gcamp"] .mode-badge-dot { background: var(--mode-gcamp); }
+
+/* ── reticle ────────────────────────────────────────────────────────────── */
+
+.reticle {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.reticle-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: var(--ink-dim);
+  border-style: solid;
+  border-width: 0;
+}
+
+.reticle-corner.tl { top: 0; left: 0; border-top-width: var(--stroke-line); border-left-width: var(--stroke-line); }
+.reticle-corner.tr { top: 0; right: 0; border-top-width: var(--stroke-line); border-right-width: var(--stroke-line); }
+.reticle-corner.bl { bottom: 0; left: 0; border-bottom-width: var(--stroke-line); border-left-width: var(--stroke-line); }
+.reticle-corner.br { bottom: 0; right: 0; border-bottom-width: var(--stroke-line); border-right-width: var(--stroke-line); }
+
+/* ── chemical overlay ───────────────────────────────────────────────────── */
+
+.chem-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  transition: filter 0.3s ease;
+}
+
+/* desaturate chem overlay in IR and GCaMP modes */
+.artboard[data-mode="ir"]    .chem-overlay,
+.artboard[data-mode="gcamp"] .chem-overlay {
+  filter: saturate(0.35);
+}
+
+/* ── per-mode color treatment ───────────────────────────────────────────── */
+
+/* The world canvas renders warm-brown photoreal pixels. For non-visible
+   modes we (1) apply a CSS filter that recolors those pixels and (2)
+   overlay mode-specific treatments (thermal wash, wireframe grid, UV
+   glow, GCaMP halo) via .mode-treatment's three sub-layers. */
+
+.mode-treatment {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 0.3s ease;
+}
+
+.mode-treatment .mt-base,
+.mode-treatment .mt-grid,
+.mode-treatment .mt-glow {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+#world {
+  transition: filter 0.3s ease;
+}
+
+/* visible: no treatment, no filter — photoreal as-is */
+
+/* IR — thermographic LUT. Grayscale the canvas first so bright-intensity
+   pixels act as "hot" regardless of their original hue. Then layer the
+   thermal gradient on top: hot yellow/orange at the center's bright
+   areas, cold blue-purple at dark edges. */
+.artboard[data-mode="ir"] #world {
+  filter: grayscale(1) contrast(1.8) brightness(1.4);
+}
+.artboard[data-mode="ir"] .mt-base {
+  /* Thermal gradient painted on top via color-dodge: bright grayscale
+     pixels pull the warm colors toward full saturation, dark pixels
+     stay dark. This approximates a hot-body → cold-body LUT. */
+  opacity: 1;
+  background:
+    radial-gradient(ellipse at 48% 55%,
+      rgba(255, 240, 180, 0.9) 0%,
+      rgba(232, 120, 60, 0.75) 35%,
+      rgba(120, 40, 120, 0.7) 70%,
+      rgba(10, 16, 48, 0.85) 100%);
+  mix-blend-mode: multiply;
+}
+.artboard[data-mode="ir"] .mt-glow {
+  /* brighter hot highlights on top of the thermal base */
+  opacity: 0.7;
+  background: radial-gradient(ellipse at 48% 55%,
+    rgba(255, 232, 150, 0.45) 0%,
+    rgba(232, 90, 40, 0.25) 30%,
+    rgba(232, 75, 60, 0) 60%);
+  mix-blend-mode: screen;
+}
+
+/* LiDAR — depth-to-color + wireframe grid */
+.artboard[data-mode="lidar"] #world {
+  filter: saturate(0.15) hue-rotate(180deg) contrast(1.1) brightness(0.85);
+}
+.artboard[data-mode="lidar"] .mt-base {
+  opacity: 0.85;
+  background:
+    radial-gradient(ellipse at 48% 55%,
+      rgba(62, 122, 152, 0.55) 0%,
+      rgba(32, 82, 104, 0.55) 35%,
+      rgba(12, 42, 64, 0.55) 70%,
+      rgba(3, 10, 24, 0.55) 100%);
+  mix-blend-mode: multiply;
+}
+.artboard[data-mode="lidar"] .mt-grid {
+  opacity: 0.85;
+  background:
+    /* coarse structural grid (24px) */
+    repeating-linear-gradient(to right,
+      transparent 0,
+      transparent 23px,
+      rgba(234, 248, 255, 0.35) 23px,
+      rgba(234, 248, 255, 0.35) 24px),
+    repeating-linear-gradient(to bottom,
+      transparent 0,
+      transparent 23px,
+      rgba(234, 248, 255, 0.35) 23px,
+      rgba(234, 248, 255, 0.35) 24px),
+    /* fine grid (6px) */
+    repeating-linear-gradient(to right,
+      transparent 0,
+      transparent 5px,
+      rgba(128, 182, 206, 0.16) 5px,
+      rgba(128, 182, 206, 0.16) 6px),
+    repeating-linear-gradient(to bottom,
+      transparent 0,
+      transparent 5px,
+      rgba(128, 182, 206, 0.16) 5px,
+      rgba(128, 182, 206, 0.16) 6px);
+  mix-blend-mode: screen;
+}
+
+/* UV — violet-black, only UV-fluorescent substances glow */
+.artboard[data-mode="uv"] #world {
+  filter: saturate(0.25) hue-rotate(260deg) brightness(0.25) contrast(1.6);
+}
+.artboard[data-mode="uv"] .mt-base {
+  opacity: 0.85;
+  background:
+    radial-gradient(ellipse at 48% 55%,
+      rgba(31, 10, 48, 0.3) 0%,
+      rgba(8, 3, 16, 0.5) 50%,
+      rgba(2, 1, 8, 0.65) 100%);
+  mix-blend-mode: multiply;
+}
+
+/* GCaMP — dark gray-green with subject glow */
+.artboard[data-mode="gcamp"] #world {
+  filter: saturate(0.3) hue-rotate(80deg) contrast(0.9) brightness(0.55);
+}
+.artboard[data-mode="gcamp"] .mt-base {
+  opacity: 0.7;
+  background:
+    radial-gradient(ellipse at 48% 55%,
+      rgba(43, 49, 47, 0.3) 0%,
+      rgba(19, 22, 20, 0.5) 60%,
+      rgba(6, 7, 6, 0.7) 100%);
+  mix-blend-mode: multiply;
+}
+.artboard[data-mode="gcamp"] .mt-glow {
+  /* Positioned by JS to follow the subject; animation provides the pulse. */
+  opacity: 0.55;
+  background: radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    rgba(184, 255, 208, 0.4) 0%,
+    rgba(77, 232, 114, 0.25) 20%,
+    rgba(77, 232, 114, 0) 40%);
+  mix-blend-mode: screen;
+  animation: gc-halo 2.4s ease-in-out infinite;
+}
+
+/* ── HUD telemetry (bottom bar, top-right tag) ──────────────────────────── */
+
+.hud-telemetry {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+.hud-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--ink-dim);
+}
+
+/* ── REC indicator ──────────────────────────────────────────────────────── */
+
+.rec-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  color: var(--accent-rec);
+}
+
+.rec-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-rec);
+  animation: rec-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes rec-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ── GCaMP pulse animations ─────────────────────────────────────────────── */
+
+@keyframes gc-pulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+
+@keyframes gc-halo {
+  0%, 100% { opacity: 0.75; }
+  50% { opacity: 1; }
+}
+
+.gcamp-ant-pulse { animation: gc-pulse 2.4s ease-in-out infinite; }
+.gcamp-ant-glow  { animation: gc-halo 2.4s ease-in-out infinite; }
+
+/* ── HUD regions ────────────────────────────────────────────────────────── */
+
+.hud-top-left,
+.hud-top-right,
+.hud-bottom-left,
+.hud-bottom-center,
+.hud-bottom-right {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.hud-top-left {
+  top: var(--inset);
+  left: calc(var(--inset) + 200px);   /* clear mode switcher */
+}
+
+.hud-top-right {
+  top: var(--inset);
+  right: var(--inset);
+  text-align: right;
+}
+
+.hud-bottom-left {
+  bottom: var(--inset);
+  left: var(--inset);
+}
+
+.hud-bottom-center {
+  bottom: calc(var(--inset) - 2px);
+  left: 260px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-bottom-right {
+  bottom: var(--inset);
+  right: var(--inset);
+  text-align: right;
+}
+
+/* ── HUD text styles ────────────────────────────────────────────────────── */
+
+.rec-label {
+  font-size: var(--text-md);
+}
+
+.rec-time {
+  font-size: var(--text-md);
+  opacity: 0.75;
+  margin-left: 12px;
+}
+
+.hud-drone {
+  font-size: var(--text-sm);
+  color: var(--ink-body);
+  margin-top: 6px;
+}
+
+.hud-cam {
+  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+
+.hud-subject {
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  color: var(--ink-primary);
+}
+
+.hud-subject em {
+  font-style: italic;
+}
+
+.hud-tracking {
+  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  margin-top: 4px;
+}
+
+.hud-scalebar {
+  color: var(--ink-primary);
+  opacity: 0.8;
+}
+
+.hud-scalebar svg {
+  font-family: var(--font-mono);
+  display: block;
+}
+
+.hud-coords {
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  margin-top: 4px;
+}
+
+.hud-frames {
+  font-size: var(--text-sm);
+  color: var(--ink-body);
+}
+
+.hud-simtick {
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+
+/* ── chem overlay chips ─────────────────────────────────────────────────── */
+
+.hud-chip-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  margin-right: 4px;
+}
+
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 10px;
+  border-radius: 2px;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  border: var(--stroke-fine) solid;
+}
+
+.hud-chip-food {
+  color: #C8D890;
+  border-color: rgba(143, 174, 88, 0.65);
+  background: rgba(143, 174, 88, 0.16);
+}
+
+.hud-chip-danger {
+  color: #F5A89A;
+  border-color: rgba(232, 75, 60, 0.65);
+  background: rgba(232, 75, 60, 0.16);
+}
+
+.hud-chip-off {
+  color: var(--ink-dim);
+  border-color: rgba(245, 240, 232, 0.3);
+  background: transparent;
+  opacity: 0.5;
+  min-width: 34px;
+}
+
+/* ── neural panel internals ─────────────────────────────────────────────── */
+
+.np-legend {
+  margin-bottom: 16px;
+}
+
+.np-legend-title {
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  margin-bottom: 8px;
+}
+
+.np-legend-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.np-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--ink-body);
+}
+
+.np-legend-item svg {
+  flex-shrink: 0;
+}
+
+/* ── selected cell inspector ────────────────────────────────────────────── */
+
+.np-inspector {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: rgba(20, 18, 16, 0.55);
+  border: var(--stroke-fine) solid rgba(232, 184, 120, 0.55);
+}
+
+.np-inspector-label {
+  font-size: var(--text-xs);
+  color: var(--accent-tracking);
+  opacity: 0.85;
+  margin-bottom: 4px;
+}
+
+.np-inspector-name {
+  font-size: var(--text-md);
+  color: var(--ink-primary);
+}
+
+.np-inspector-detail {
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+
+/* ── graph canvas ───────────────────────────────────────────────────────── */
+
+.np-graph-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 12px;
+}
+
+/* ── live trace ─────────────────────────────────────────────────────────── */
+
+.np-trace {
+  margin-top: 8px;
+}
+
+.np-trace-label {
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  margin-bottom: 4px;
+}
+
+.np-trace-canvas {
+  display: block;
+  width: 100%;
+  height: 48px;
+  border-top: var(--stroke-hairline) solid var(--panel-divider);
+  border-bottom: var(--stroke-hairline) solid var(--panel-divider);
+}
+
+/* ── panel footer ───────────────────────────────────────────────────────── */
+
+.np-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: var(--stroke-hairline) solid var(--panel-divider);
+}
+
+.np-footer-info {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--ink-dim);
+}
+
+.np-edit-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--ink-body);
+  transition: color 0.14s ease;
+}
+
+.np-edit-btn:hover {
+  color: var(--ink-primary);
+}
+
+/* ── utility ────────────────────────────────────────────────────────────── */
+
+.obs-mono {
+  font-family: var(--font-mono);
+}
