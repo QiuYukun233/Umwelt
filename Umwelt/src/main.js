@@ -61,6 +61,7 @@ class App {
     this.sidebar.setGraph(this.graph);
     this.sidebar.editor.setBodyParams(this.world.bodyParams);
     this.sidebar.setSensorConfig(this.sensorConfig);
+    this.sidebar.rebuildSensors(this.sensorDefs);   // match loaded config
     this.refreshMetricsSnapshot();
     this.saveCircuit();
     this.topbar.renderBehavior(this.behavior);

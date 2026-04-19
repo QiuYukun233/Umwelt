@@ -232,6 +232,12 @@ export class World {
       const point = respawnPoint(this.w, this.h, CONFIG.DANGER_MARGIN, avoid);
       return { id: index + 1, x: point.x, y: point.y, r: randomBetween(7, 10), phase: randomBetween(0, TAU) };
     });
+    // Clear environmental plumes before the new warmup. ChemB/ChemC are
+    // deliberately NOT cleared — those are the ant's own gland secretions
+    // (ground trail, alarm cloud). Wiping them on a density-slider change
+    // would erase the path-following behavior the system is built around.
+    this.fields.chem_A.grid.fill(0);
+    this.fields.chem_D.grid.fill(0);
     this.warmupFields();
   }
 
