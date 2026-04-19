@@ -5,17 +5,17 @@ import { NeuralEditor } from "./editor.js";
 export class Sidebar {
   constructor(callbacks = {}) {
     this.callbacks = callbacks;
-    this.sensorMap = new SensorMapRenderer(document.getElementById("sensor-map"), {
-      onToggleSensor: (id) => this.callbacks.onToggleSensor?.(id),
-      onToggleSensorMode: (id) => this.callbacks.onToggleSensorMode?.(id),
-      isSensorEnabled: (id) => this.callbacks.isSensorEnabled?.(id)
-    });
+    this.sensorMap = new SensorMapRenderer(document.getElementById("sensor-map"));
     this.graph = new GraphRenderer(document.getElementById("neural"));
     this.editor = new NeuralEditor({
       onRun: () => this.callbacks.onRun?.(),
       onReset: () => this.callbacks.onReset?.(),
-      onNoiseFrequency: (value) => this.callbacks.onNoiseFrequency?.(value),
-      onChange: () => this.callbacks.onGraphChange?.()
+      onChange: () => this.callbacks.onGraphChange?.(),
+      onToggleSensor: (id) => this.callbacks.onToggleSensor?.(id),
+      onBodyParams: (params) => this.callbacks.onBodyParams?.(params),
+      onExport: () => this.callbacks.onExport?.(),
+      onImport: (text) => this.callbacks.onImport?.(text),
+      onSensorConfigChange: (config) => this.callbacks.onSensorConfigChange?.(config)
     });
     this.editBtn = document.getElementById("edit-circuit-btn");
     this.editBtn.addEventListener("click", () => this.callbacks.onEdit?.());
@@ -37,16 +37,20 @@ export class Sidebar {
     this.editor.setGraph(graph);
   }
 
-  setSensorState(sensorEnabled, sensorModes) {
-    this.editor.setSensorState(sensorEnabled, sensorModes);
+  setSensorState(sensorEnabled) {
+    this.editor.setSensorState(sensorEnabled);
   }
 
   setEvaluation(evaluation) {
     this.editor.setEvaluation(evaluation);
   }
 
-  setNoiseFrequency(value) {
-    this.editor.setNoiseFrequency(value);
+  rebuildSensors(sensorDefs) {
+    this.sensorMap.rebuildSensors(sensorDefs);
+  }
+
+  setSensorConfig(config) {
+    this.editor.setSensorConfig(config);
   }
 
   setEditorOpen(open) {
@@ -54,9 +58,9 @@ export class Sidebar {
     if (open) this.editor.fitView();
   }
 
-  render(time, graph, evaluation, metrics, sensorEnabled, sensorModes, noiseFrequency) {
-    this.sensorMap.render(metrics, sensorEnabled, sensorModes);
-    this.graph.render(time, graph, evaluation, sensorEnabled, sensorModes, noiseFrequency);
+  render(time, graph, evaluation, metrics, sensorEnabled) {
+    this.sensorMap.render(metrics, sensorEnabled);
+    this.graph.render(time, graph, evaluation, sensorEnabled);
     this.editor.render(time);
   }
 }

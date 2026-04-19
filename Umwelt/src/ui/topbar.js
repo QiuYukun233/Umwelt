@@ -11,7 +11,6 @@ export class Topbar {
       generation: document.getElementById("generation"),
       pauseBtn: document.getElementById("pause-btn"),
       speedButtons: [...document.querySelectorAll(".speed-btn")],
-      behaviorPill: document.getElementById("behavior-pill"),
       envBtn: document.getElementById("env-btn"),
       envPanel: document.getElementById("env-panel"),
       foodDensity: document.getElementById("food-density"),
@@ -98,9 +97,7 @@ export class Topbar {
     for (const button of this.r.speedButtons) button.classList.toggle("active", Number(button.dataset.speed) === speed);
   }
 
-  renderBehavior(behavior) {
-    this.setText(this.r.behaviorPill, behavior.name);
-  }
+  renderBehavior() {}
 
   renderStats(world) {
     this.setText(this.r.alive, world.alive.toFixed(1));

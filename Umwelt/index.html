@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Braitenberg 沙盒 | FIBRA</title>
+<title>Braitenberg 沙盒 | UMWELT</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -11,7 +11,7 @@
 <body>
 <div id="app">
   <header id="topbar">
-    <span class="logo">FIBRA</span><span class="sep mono">|</span>
+    <span class="logo">UMWELT</span><span class="sep mono">|</span>
     <span class="chip mono">存活 <b id="alive-time">0.0</b>s</span>
     <span class="chip mono">食物 <b id="food-count">0</b></span>
     <span class="chip mono">代数 <b id="generation">1</b></span>
@@ -19,7 +19,6 @@
       <button class="btn mono" id="pause-btn" type="button">暂停</button>
       <button class="speed-btn" data-speed="0.125">1/8</button><button class="speed-btn" data-speed="0.25">1/4</button><button class="speed-btn" data-speed="0.5">1/2</button><button class="speed-btn active" data-speed="1">1x</button><button class="speed-btn" data-speed="2">2x</button>
     </div>
-    <div id="behavior-pill">回避</div>
     <span class="spacer"></span>
     <div class="env-wrap">
       <button class="btn mono" id="env-btn" type="button">环境</button>
@@ -40,16 +39,16 @@
     <div id="death-overlay"><div class="death-card"><h2 class="death-title">DIAGNOSIS</h2><div class="death-text" id="death-reason"></div><div class="death-grid"><div class="death-box"><b>存活</b><div id="death-lived">0.0s</div></div><div class="death-box"><b>食物</b><div id="death-food">0</div></div><div class="death-box"><b>感知</b><div id="death-sense">左 0 / 右 0</div></div><div class="death-box"><b>连线</b><div id="death-behavior">回避 - 交叉抑制为主</div></div></div><div class="death-tip">尝试把同侧连线改为交叉连线，看看会发生什么。</div><button class="btn primary mono" id="restart-btn-overlay" type="button">重新投入</button></div></div>
   </section>
   <aside id="side">
-    <section class="panel" id="sensor-panel"><div><h2 class="panel-title">传感器选择</h2><p class="panel-sub">点击环上的节点启用或关闭传感器。</p></div><canvas id="sensor-map"></canvas></section>
+    <section class="panel" id="sensor-panel"><div><h2 class="panel-title">传感器状态</h2><p class="panel-sub">拖动旋转查看各传感器的实时激活。</p></div><div id="sensor-map"></div></section>
     <section id="neural-shell"><div class="subpanel-head"><div class="subpanel-title">神经连线图</div></div><canvas id="neural"></canvas><button class="btn mono" id="edit-circuit-btn" type="button">编辑回路</button></section>
-    <section id="state-card"><div class="state-head"><div><div class="panel-title">状态数据</div><div id="behavior-desc">交叉抑制为主</div></div><div id="behavior-name">回避</div></div><div id="state-bars"></div></section>
+    <section id="state-card"><div class="state-head"><div class="panel-title">状态数据</div></div><div id="state-bars"></div></section>
   </aside>
   <section id="footer">
-    <div class="footer-box"><div class="footer-title">实时数据</div><div class="bar-row"><span class="bar-key">食左</span><div class="bar-track"><div class="bar-fill" id="bar-left-eye" style="background:var(--mint)"></div></div><span class="bar-val" id="val-left-eye">0</span></div><div class="bar-row"><span class="bar-key">食右</span><div class="bar-track"><div class="bar-fill" id="bar-right-eye" style="background:var(--mint)"></div></div><span class="bar-val" id="val-right-eye">0</span></div><div class="bar-row"><span class="bar-key">左腿</span><div class="bar-track"><div class="bar-fill" id="bar-left-leg" style="background:var(--amber)"></div></div><span class="bar-val" id="val-left-leg">0</span></div><div class="bar-row"><span class="bar-key">右腿</span><div class="bar-track"><div class="bar-fill" id="bar-right-leg" style="background:var(--amber)"></div></div><span class="bar-val" id="val-right-leg">0</span></div><div class="bar-row"><span class="bar-key">速度</span><div class="bar-track"><div class="bar-fill" id="bar-speed" style="background:var(--brown)"></div></div><span class="bar-val" id="val-speed">0</span></div><div class="bar-row"><span class="bar-key">能量</span><div class="bar-track"><div class="bar-fill" id="bar-energy" style="background:var(--red)"></div></div><span class="bar-val" id="val-energy">100</span></div></div>
+    <div class="footer-box"><div class="footer-title">实时数据</div><div class="bar-row"><span class="bar-key">⊕A左</span><div class="bar-track"><div class="bar-fill" id="bar-left-chem-a" style="background:var(--mint)"></div></div><span class="bar-val" id="val-left-chem-a">0</span></div><div class="bar-row"><span class="bar-key">⊕A右</span><div class="bar-track"><div class="bar-fill" id="bar-right-chem-a" style="background:var(--mint)"></div></div><span class="bar-val" id="val-right-chem-a">0</span></div><div class="bar-row"><span class="bar-key">→进</span><div class="bar-track"><div class="bar-fill" id="bar-forward" style="background:var(--amber)"></div></div><span class="bar-val" id="val-forward">0</span></div><div class="bar-row"><span class="bar-key">→左</span><div class="bar-track"><div class="bar-fill" id="bar-turn-l" style="background:var(--amber)"></div></div><span class="bar-val" id="val-turn-l">0</span></div><div class="bar-row"><span class="bar-key">→右</span><div class="bar-track"><div class="bar-fill" id="bar-turn-r" style="background:var(--amber)"></div></div><span class="bar-val" id="val-turn-r">0</span></div><div class="bar-row"><span class="bar-key">速度</span><div class="bar-track"><div class="bar-fill" id="bar-speed" style="background:var(--brown)"></div></div><span class="bar-val" id="val-speed">0</span></div><div class="bar-row"><span class="bar-key">能量</span><div class="bar-track"><div class="bar-fill" id="bar-energy" style="background:var(--red)"></div></div><span class="bar-val" id="val-energy">100</span></div></div>
     <div class="footer-box"><div class="footer-title">事件日志</div><div id="log-list"></div></div>
   </section>
 </div>
-<div id="editor-overlay"><div id="editor-toolbar"><div id="editor-title">FIBRA · 神经编辑器</div><div id="editor-hint">从节点拖出连线 · 右键删除</div><div id="editor-actions"><button class="btn mono" id="editor-reset-btn" type="button">重置回路</button><button class="btn primary mono" id="editor-run-btn" type="button">▶ 运行</button></div></div><div id="editor-stage"><canvas id="editor-canvas"></canvas><div id="editor-noise-control"><input id="editor-noise-slider" type="range" min="0.1" max="3.0" step="0.1" value="0.5"><span id="editor-noise-value">0.5</span></div><div id="editor-menu"></div></div></div>
+<div id="editor-overlay"><div id="editor-toolbar"><div id="editor-title">UMWELT · 神经编辑器</div><div id="editor-hint">从节点拖出连线 · 右键删除</div><div id="body-panel"><span class="body-panel-title">身体</span><label class="body-row"><span class="body-label">转向</span><input class="body-range" id="body-turn" type="range" min="10" max="1000" value="100"><span class="body-val" id="body-turn-val">1.0</span></label><label class="body-row"><span class="body-label">速度</span><input class="body-range" id="body-speed" type="range" min="10" max="500" value="100"><span class="body-val" id="body-speed-val">1.0</span></label></div><button class="btn mono" id="body-editor-btn" type="button">感受器</button><div id="editor-actions"><button class="btn mono" id="editor-import-btn" type="button">导入</button><button class="btn mono" id="editor-export-btn" type="button">导出</button><button class="btn mono" id="editor-reset-btn" type="button">重置回路</button><button class="btn primary mono" id="editor-run-btn" type="button">▶ 运行</button></div><input type="file" id="editor-import-file" accept=".json" style="display:none"></div><div id="editor-stage"><canvas id="editor-canvas"></canvas><div id="editor-menu"></div><div id="body-editor-panel"></div></div></div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>
