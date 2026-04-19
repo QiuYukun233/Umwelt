@@ -31,7 +31,10 @@ export class Observation {
     this.modeSwitcher = new ModeSwitcher(this.artboard, {
       onModeChange: (m) => this._handleModeChange(m),
     });
-    this.hud = new CamHUD(this.viewport);
+    this.hud = new CamHUD(this.viewport, {
+      onPauseToggle: opts.onPauseToggle || null,
+      onSpeedChange: opts.onSpeedChange || null,
+    });
     this.neuralPanel = new NeuralPanel(this.panelEl, this.neuralMount, {
       onEditCircuit: opts.onEditCircuit || null,
     });

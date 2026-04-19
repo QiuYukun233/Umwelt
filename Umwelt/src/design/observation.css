@@ -596,6 +596,81 @@
   margin-top: 2px;
 }
 
+/* ── playback controls ──────────────────────────────────────────────────── */
+
+.hud-playback {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 6px;
+  pointer-events: auto;   /* HUD zones are pointer-events:none, but controls need clicks */
+}
+
+.pb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: var(--stroke-fine) solid rgba(245, 240, 232, 0.3);
+  border-radius: 2px;
+  background: rgba(20, 18, 16, 0.5);
+  color: var(--ink-body);
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.pb-btn:hover {
+  color: var(--ink-primary);
+  border-color: rgba(245, 240, 232, 0.55);
+  background: rgba(20, 18, 16, 0.75);
+}
+
+.pb-btn.paused {
+  color: var(--accent-tracking);
+  border-color: var(--accent-tracking);
+}
+
+.pb-btn .pb-icon-play { display: none; }
+.pb-btn.paused .pb-icon-pause { display: none; }
+.pb-btn.paused .pb-icon-play { display: block; }
+
+.pb-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  border: var(--stroke-fine) solid rgba(245, 240, 232, 0.2);
+  border-radius: 2px;
+  background: rgba(20, 18, 16, 0.5);
+  pointer-events: auto;
+}
+
+.pb-speed-btn {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+
+.pb-speed-btn:hover {
+  color: var(--ink-primary);
+  background: rgba(245, 240, 232, 0.06);
+}
+
+.pb-speed-btn.active {
+  color: var(--accent-tracking);
+  background: rgba(232, 184, 120, 0.12);
+}
+
 /* ── chem overlay chips ─────────────────────────────────────────────────── */
 
 .hud-chip-label {

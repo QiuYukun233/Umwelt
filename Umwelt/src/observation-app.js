@@ -59,6 +59,8 @@ class ObservationApp {
       initialMode: "visible",
       onModeChange: (mode) => this._onModeChange(mode),
       onEditCircuit: () => this._openEditor(),
+      onPauseToggle: (paused) => { this.paused = paused; },
+      onSpeedChange: (speed) => { this.speed = speed; },
     });
 
     // ── World renderer → observation canvas ──
@@ -222,6 +224,7 @@ class ObservationApp {
   _togglePause() {
     if (this.world.dead) return;
     this.paused = !this.paused;
+    this.obs.hud.setPaused(this.paused);
   }
 
   _handleGraphChange() {

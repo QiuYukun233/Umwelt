@@ -1,5 +1,7 @@
 import { LAYOUT } from '../design/tokens.js';
 
+const SPEEDS = [0.25, 0.5, 1, 2];
+
 /**
  * CamHUD — DOM overlay elements inside the camera viewport.
  *
@@ -8,15 +10,22 @@ import { LAYOUT } from '../design/tokens.js';
  *   top-right:    subject tag + tracking status
  *   bottom-left:  scale bar, coordinates, environment data
  *   bottom-center: chem overlay chips (α β γ δ)
- *   bottom-right: frame counter, sim tick, playback controls
+ *   bottom-right: playback controls, frame counter, sim tick
  */
 export class CamHUD {
   /**
    * @param {HTMLElement} viewport — the .cam-viewport container
+   * @param {object} [callbacks]
+   * @param {(paused:boolean)=>void} [callbacks.onPauseToggle]
+   * @param {(speed:number)=>void} [callbacks.onSpeedChange]
    */
-  constructor(viewport) {
+  constructor(viewport, callbacks = {}) {
     this.viewport = viewport;
+    this.callbacks = callbacks;
+    this._paused = false;
+    this._speed = 1;
     this._buildDOM();
+    this._bind();
     this._elapsed = 0;
     this._frame = 0;
     this._tick = 0;
@@ -69,11 +78,28 @@ export class CamHUD {
       <span class="hud-chip hud-chip-danger">\u03b4 danger</span>
     `;
 
-    // ── bottom-right: frame counter ──
+    // ── bottom-right: playback + frame counter ──
     this.bottomRight = this._el('div', 'hud-bottom-right');
+    const speedButtons = SPEEDS.map((s) => {
+      const label = s === 0.25 ? '¼' : s === 0.5 ? '½' : `${s}\u00d7`;
+      const active = s === 1 ? ' active' : '';
+      return `<button class="pb-speed-btn${active}" data-speed="${s}" type="button">${label}</button>`;
+    }).join('');
     this.bottomRight.innerHTML = `
+      <div class="hud-playback">
+        <button class="pb-btn" id="hud-pause-btn" type="button" aria-label="pause">
+          <svg class="pb-icon-pause" viewBox="0 0 10 10" width="10" height="10">
+            <rect x="2" y="1" width="2" height="8" fill="currentColor"/>
+            <rect x="6" y="1" width="2" height="8" fill="currentColor"/>
+          </svg>
+          <svg class="pb-icon-play" viewBox="0 0 10 10" width="10" height="10">
+            <path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/>
+          </svg>
+        </button>
+        <div class="pb-speed">${speedButtons}</div>
+      </div>
       <div class="hud-frames obs-mono" id="hud-frames">F 0 \u00b7 60 fps</div>
-      <div class="hud-simtick obs-mono" id="hud-simtick">sim tick 0 \u00b7 \u00d71.0</div>
+      <div class="hud-simtick obs-mono" id="hud-simtick">sim tick 0 \u00b7 \u00d71</div>
     `;
 
     // cache refs
@@ -82,6 +108,8 @@ export class CamHUD {
       trackTime: this.topRight.querySelector('#hud-track-time'),
       frames: this.bottomRight.querySelector('#hud-frames'),
       simtick: this.bottomRight.querySelector('#hud-simtick'),
+      pauseBtn: this.bottomRight.querySelector('#hud-pause-btn'),
+      speedBtns: this.bottomRight.querySelectorAll('.pb-speed-btn'),
     };
 
     // append all
@@ -96,6 +124,35 @@ export class CamHUD {
     const el = document.createElement(tag);
     el.className = cls;
     return el;
+  }
+
+  _bind() {
+    this.els.pauseBtn.addEventListener('click', () => {
+      this.setPaused(!this._paused);
+      this.callbacks.onPauseToggle?.(this._paused);
+    });
+    for (const btn of this.els.speedBtns) {
+      btn.addEventListener('click', () => {
+        const s = Number(btn.dataset.speed);
+        this.setSpeed(s);
+        this.callbacks.onSpeedChange?.(s);
+      });
+    }
+  }
+
+  /** Called by the app when pause state changes externally (e.g. keyboard). */
+  setPaused(paused) {
+    this._paused = paused;
+    this.els.pauseBtn.classList.toggle('paused', paused);
+    this.els.pauseBtn.setAttribute('aria-label', paused ? 'play' : 'pause');
+  }
+
+  /** Called by the app when speed changes. */
+  setSpeed(speed) {
+    this._speed = speed;
+    for (const btn of this.els.speedBtns) {
+      btn.classList.toggle('active', Number(btn.dataset.speed) === speed);
+    }
   }
 
   /** Called every render frame with simulation state. */
