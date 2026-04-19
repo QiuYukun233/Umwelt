@@ -271,9 +271,14 @@ export function drawEditorGrid(c, width, height, view) {
   c.restore();
 }
 
+function effectiveEdgeWeight(edge) {
+  if (edge.plastic && Number.isFinite(edge.w)) return edge.w;
+  return edge.weight ?? 1;
+}
+
 function edgeStyle(fromNode, edge, palette) {
   if (!fromNode) return { color: palette["border-2"], alpha: 0.35, lineWidth: 1.2 };
-  const weight = clamp(edge.weight ?? 1, 0.1, 1);
+  const weight = clamp(effectiveEdgeWeight(edge), 0, 1);
   const neuronType = nodeTypeOf(fromNode);
   return {
     color: graphKindColor(isSensorType(neuronType) ? fromNode.kind : neuronType, palette),
@@ -362,6 +367,12 @@ export function drawCircuitScene(c, width, height, palette, graph, evaluation, s
     c.lineWidth = active
       ? (geometry.feedback ? style.lineWidth * 0.9 : style.lineWidth * clamp(0.55 + signal * 0.9, 0.55, 1.5))
       : style.lineWidth * 0.6;
+    if (edge.plastic) {
+      // Dash length scaled with lineWidth so it stays readable at
+      // very-low and very-high effective weights.
+      const dashLen = Math.max(4, c.lineWidth * 2.4);
+      c.setLineDash([dashLen, Math.max(3, c.lineWidth * 1.6)]);
+    }
     if (active && signal > 0.06 && !dimmed) {
       c.shadowBlur = 4 + signal * 10;
       c.shadowColor = style.color;
@@ -388,19 +399,56 @@ export function drawCircuitScene(c, width, height, palette, graph, evaluation, s
     }
 
     if (!showEdgeLabels || dimmed) return;
+    const displayWeight = effectiveEdgeWeight(edge);
+    const learned = edge.plastic && Math.abs(displayWeight - (edge.weight ?? 0)) > 0.05;
+    const ringColor = learned ? (palette.amber ?? "#d4a85a") : (active ? style.color : palette["border-2"]);
     c.beginPath();
     c.arc(geometry.label.x, geometry.label.y, 13, 0, TAU);
     c.fillStyle = palette.surface;
     c.fill();
-    c.strokeStyle = active ? style.color : palette["border-2"];
-    c.lineWidth = 1.1;
+    if (learned) {
+      // Faint amber wash layered over the surface fill — Canvas 2D accepts
+      // rgba() everywhere, unlike color-mix() which needs modern browsers.
+      c.fillStyle = "rgba(212,168,90,0.16)";
+      c.fill();
+    }
+    c.strokeStyle = ringColor;
+    c.lineWidth = learned ? 1.4 : 1.1;
     c.stroke();
-    c.fillStyle = active ? style.color : palette["text-faint"];
+    c.fillStyle = learned ? ringColor : (active ? style.color : palette["text-faint"]);
     c.font = '600 9px "IBM Plex Mono", "Microsoft YaHei", "PingFang SC", monospace';
     c.textAlign = "center";
     c.textBaseline = "middle";
-    c.fillText(`${(edge.weight ?? 1).toFixed(2)}x`, geometry.label.x, geometry.label.y + 0.5);
+    c.fillText(`${displayWeight.toFixed(2)}x`, geometry.label.x, geometry.label.y + 0.5);
   });
+
+  // Plastic-edge modulator hints: a faint line from the bound modulator's
+  // out-port to the edge's label midpoint, so the player can read which
+  // modulator is gating each plastic synapse at a glance. Drawn after
+  // edges so the hint goes on top of underlying strokes.
+  for (const edge of graph.edges.values()) {
+    if (!edge.plastic || !edge.mod_source_id) continue;
+    const modNode = graph.nodes.get(edge.mod_source_id);
+    if (!modNode || hiddenNodes.has(modNode.id)) continue;
+    const fromNode = graph.nodes.get(edge.fromId);
+    const toNode = graph.nodes.get(edge.toId);
+    if (!fromNode || !toNode) continue;
+    if (hiddenNodes.has(edge.fromId) || hiddenNodes.has(edge.toId)) continue;
+    const geometry = graph.edgeGeometry(edge);
+    if (!geometry) continue;
+    const start = nodePort(modNode, "out");
+    const end = geometry.label;
+    c.save();
+    c.globalAlpha = 0.22;
+    c.strokeStyle = palette.amber ?? "#d4a85a";
+    c.lineWidth = 0.7;
+    c.setLineDash([3, 4]);
+    c.beginPath();
+    c.moveTo(start.x, start.y);
+    c.lineTo(end.x, end.y);
+    c.stroke();
+    c.restore();
+  }
 
   if (dragPreview) {
     c.save();
