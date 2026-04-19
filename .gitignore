@@ -1,0 +1,12 @@
+# env secrets — never commit at any level
+.env
+.env.*
+**/.env
+**/.env.*
+
+# personal editor/tool state
+.claude/
+**/.claude/
+
+# headless browser profiles
+.edge-headless/
