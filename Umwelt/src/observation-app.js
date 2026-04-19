@@ -20,7 +20,8 @@ import { Observation } from "./ui/observation.js";
 import { NeuralEditor } from "./ui/editor.js";
 
 const STORAGE_KEY = "umwelt_circuit";
-const STORAGE_VERSION = 6;
+const STORAGE_VERSION = 7;
+const MIGRATABLE_STORAGE_VERSION = 6;
 
 class ObservationApp {
   constructor() {
@@ -182,7 +183,7 @@ class ObservationApp {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return false;
       const data = JSON.parse(raw);
-      if ((data.version ?? 1) < STORAGE_VERSION) {
+      if ((data.version ?? 1) < MIGRATABLE_STORAGE_VERSION) {
         localStorage.removeItem(STORAGE_KEY);
         return false;
       }

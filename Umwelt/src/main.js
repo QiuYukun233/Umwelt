@@ -11,7 +11,8 @@ import { SensorConfig } from "./sensor-config.js";
 import { ACTIVE_CREATURE } from "./creatures/index.js";
 
 const STORAGE_KEY = "umwelt_circuit";
-const STORAGE_VERSION = 6; // bumped: ant anatomy (12 slots + 2 proprio, 6 motors)
+const STORAGE_VERSION = 7; // bumped: plastic synapses (edges carry plastic/mod_source_id/w)
+const MIGRATABLE_STORAGE_VERSION = 6; // v6 saves load via in-deserialize migration; < v6 is wiped
 
 class App {
   constructor() {
@@ -271,7 +272,7 @@ class App {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return false;
       const data = JSON.parse(raw);
-      if ((data.version ?? 1) < STORAGE_VERSION) {
+      if ((data.version ?? 1) < MIGRATABLE_STORAGE_VERSION) {
         localStorage.removeItem(STORAGE_KEY);
         return false;
       }

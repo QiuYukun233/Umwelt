@@ -769,7 +769,10 @@ export class NeuralGraph {
         rebound_gate_center: defaultReboundGateCenterForNode(node),
         rebound_gate_slope: defaultReboundGateSlopeForNode(node)
       })),
-      edges: [...this.edges.values()].map((edge) => ({ ...edge, weight: clampWeight(edge.weight) })),
+      edges: [...this.edges.values()].map((edge) => ({
+        ...edge,
+        weight: edge.plastic ? clampToDaleLaw(edge.weight) : clampWeight(edge.weight)
+      })),
       nextNeuronIndex: this.nextNeuronIndex,
       nextEdgeIndex: this.nextEdgeIndex
     });
@@ -788,10 +791,40 @@ export class NeuralGraph {
     }));
     this.edges = new Map(
       (data.edges ?? []).map((edge) => {
-        const normalized = { ...edge, fromId: edge.fromId ?? edge.from, toId: edge.toId ?? edge.to, weight: clampWeight(edge.weight ?? 1) };
+        const normalized = {
+          ...edge,
+          fromId: edge.fromId ?? edge.from,
+          toId: edge.toId ?? edge.to,
+          plastic: edge.plastic === true,
+          mod_source_id: edge.mod_source_id ?? null
+        };
         delete normalized.from;
         delete normalized.to;
         delete normalized.excitatory;
+
+        // Plastic validity: mod_source_id must reference an existing
+        // modulator node in the just-loaded graph. Dangling refs revert
+        // the edge to fixed with a warning, matching the node-deletion
+        // recovery path in removeNode so the evaluator never sees a
+        // plastic edge without a valid modulator.
+        if (normalized.plastic) {
+          const modNode = normalized.mod_source_id ? this.nodes.get(normalized.mod_source_id) : null;
+          if (!modNode || (modNode.neuronType ?? modNode.type) !== "modulator") {
+            console.warn(`deserialize: reverting plastic edge ${normalized.id} to fixed — mod_source_id ${normalized.mod_source_id} missing or not a modulator`);
+            normalized.plastic = false;
+            normalized.mod_source_id = null;
+            delete normalized.w;
+          }
+        }
+
+        if (normalized.plastic) {
+          normalized.weight = clampToDaleLaw(normalized.weight ?? 1);
+          normalized.w = clampToDaleLaw(Number.isFinite(normalized.w) ? normalized.w : normalized.weight);
+        } else {
+          normalized.weight = clampWeight(normalized.weight ?? 1);
+          delete normalized.w;
+        }
+
         return [normalized.id, normalized];
       })
     );
