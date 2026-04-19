@@ -3,6 +3,7 @@ import { fitCanvas, readThemeVars, clamp } from "../math.js";
 import { nodeHasInput, nodeHasOutput, nodePort, nodeRect } from "../neural.js";
 import { drawCircuitScene, fitGraphView, sampleCurveDistance, screenToWorld, worldToScreen, computeGroupBoxes, resolveEdgeGeometry } from "../renderer/graph.js";
 import { BodyEditor } from "./body-editor.js";
+import { ConnectionInspector } from "./connection-inspector.js";
 
 const CREATABLE_TYPES = [
   { type: "inter_exc",  label: "兴奋神经元", desc: "传递并积累兴奋信号" },
@@ -26,6 +27,8 @@ function promptNumber(message, currentValue, min, max) {
   if (!Number.isFinite(value)) return null;
   return clamp(value, min, max);
 }
+
+const DRAG_THRESHOLD = 5;
 
 function connectionBlockReason(node, direction) {
   const neuronType = nodeTypeOf(node);
@@ -56,6 +59,13 @@ export class NeuralEditor {
       onClose: () => this.toggleBodyEditor(false),
       onSensorConfigChange: (config) => this.callbacks.onSensorConfigChange?.(config)
     });
+    const inspectorMount = document.getElementById("connection-inspector-panel");
+    this.inspector = inspectorMount
+      ? new ConnectionInspector(inspectorMount, {
+          onClose: () => this.clearSelection(),
+          onChange: () => this.callbacks.onChange?.()
+        })
+      : null;
     this.open = false;
     this.graph = null;
     this.evaluation = {
@@ -71,6 +81,8 @@ export class NeuralEditor {
     this.panState = null;
     this.linkDrag = null;
     this.hoverEdgeId = null;
+    this.selectedEdgeId = null;
+    this.pendingEdgeClick = null;
     this.collapsedGroups = this.loadCollapseState();
     this.groupBoxes = null;
     this.pendingGroupClick = null;
@@ -110,6 +122,12 @@ export class NeuralEditor {
     document.addEventListener("pointerdown", (event) => {
       if (this.open && this.menu.classList.contains("show") && !event.target.closest("#editor-menu")) this.hideMenu();
     });
+    document.addEventListener("keydown", (event) => {
+      if (!this.open) return;
+      if (event.key === "Escape" && this.selectedEdgeId) {
+        this.clearSelection();
+      }
+    });
   }
 
   resize() {
@@ -129,7 +147,28 @@ export class NeuralEditor {
     }
   }
 
-  setGraph(graph) { this.graph = graph; }
+  setGraph(graph) {
+    this.graph = graph;
+    if (this.inspector) this.inspector.setGraph(graph);
+    // If the previously-selected edge vanished, drop the selection so the
+    // panel doesn't linger with stale data.
+    if (this.selectedEdgeId && !graph?.edges?.has(this.selectedEdgeId)) {
+      this.clearSelection();
+    }
+  }
+
+  selectEdge(edgeId) {
+    if (!this.graph || !this.graph.edges.has(edgeId)) return;
+    this.selectedEdgeId = edgeId;
+    this.callbacks.onSelectionChange?.(edgeId);
+  }
+
+  clearSelection() {
+    if (!this.selectedEdgeId) return;
+    this.selectedEdgeId = null;
+    if (this.inspector) this.inspector.hide();
+    this.callbacks.onSelectionChange?.(null);
+  }
   setEvaluation(evaluation) { this.evaluation = evaluation; }
   setSensorState(sensorEnabled) { this.sensorEnabled = sensorEnabled; }
 
@@ -206,8 +245,18 @@ export class NeuralEditor {
     }
     if (hit?.kind === "node") {
       this.pendingDrag = { nodeId: hit.nodeId, startScreen: { ...screenPoint }, startWorld: { ...worldPoint }, hoverTimer: null };
+      // A node-hit click clears any edge selection once it resolves as a
+      // click rather than a drag (see onPointerUp); we leave selection
+      // intact here so drag-to-move doesn't flicker the panel.
       return;
     }
+    if (hit?.kind === "edge" || hit?.kind === "edge-label") {
+      this.pendingEdgeClick = { edgeId: hit.edgeId, startScreen: { ...screenPoint } };
+      return;
+    }
+    // Empty canvas: clear selection so the click reads as "deselect", then
+    // pan.
+    if (this.selectedEdgeId) this.clearSelection();
     this.panState = { screen: screenPoint, view: { ...this.view } };
   }
 
@@ -234,10 +283,20 @@ export class NeuralEditor {
     }
     this.canvas.style.cursor = cursor;
 
+    if (this.pendingEdgeClick) {
+      const dx = screenPoint.x - this.pendingEdgeClick.startScreen.x;
+      const dy = screenPoint.y - this.pendingEdgeClick.startScreen.y;
+      if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+        // Treat it as a pan, not a click.
+        this.pendingEdgeClick = null;
+        this.panState = { screen: screenPoint, view: { ...this.view } };
+      }
+    }
+
     if (this.pendingDrag) {
       const dx = screenPoint.x - this.pendingDrag.startScreen.x;
       const dy = screenPoint.y - this.pendingDrag.startScreen.y;
-      if (Math.hypot(dx, dy) > 5) {
+      if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
         const node = this.graph.nodes.get(this.pendingDrag.nodeId);
         if (node && isEditableNode(node)) {
           // If drag started near the output port → link; otherwise → move
@@ -292,12 +351,21 @@ export class NeuralEditor {
       this.saveCollapseState();
       return;
     }
+    if (this.pendingEdgeClick) {
+      this.selectEdge(this.pendingEdgeClick.edgeId);
+      this.pendingEdgeClick = null;
+      this.panState = null;
+      return;
+    }
     if (this.pendingDrag) {
       const node = this.graph.nodes.get(this.pendingDrag.nodeId);
       if (node && isEditableNode(node)) {
         this.hoverNodeId = node.id;
+        // Click resolved on an editable node — deselect any edge.
+        if (this.selectedEdgeId) this.clearSelection();
       } else if (node && node.neuronType === "sensor_on" && node.sourceId) {
         this.callbacks.onToggleSensor?.(node.sourceId);
+        if (this.selectedEdgeId) this.clearSelection();
       }
       this.pendingDrag = null;
     } else if (this.dragNode) {
@@ -327,12 +395,10 @@ export class NeuralEditor {
     this.hideMenu();
     if (!hit) return this.showNewNodeMenu(worldPoint, this.point(event));
 
+    // Edge double-click is absorbed by single-click selection + inspector panel.
+    // Keeping node-tau prompt unchanged.
     if (hit.kind === "edge" || hit.kind === "edge-label") {
-      const edge = this.graph.edges.get(hit.edgeId);
-      const weight = promptNumber("Set edge weight (0.1 to 1.0)", edge?.weight ?? 1, 0.1, 1.0);
-      if (weight === null) return;
-      this.graph.updateEdgeWeight(hit.edgeId, weight);
-      this.callbacks.onChange?.();
+      this.selectEdge(hit.edgeId);
       return;
     }
 
@@ -368,8 +434,17 @@ export class NeuralEditor {
     if (kind === "node" && !isEditableNode(this.graph.nodes.get(id))) return;
     this.menu.innerHTML = `<button class="editor-item danger">${kind === "edge" ? "删除连线" : "删除节点"}</button>`;
     this.menu.firstElementChild.addEventListener("click", () => {
-      if (kind === "edge") this.graph.removeEdge(id);
-      else this.graph.removeNode(id);
+      if (kind === "edge") {
+        this.graph.removeEdge(id);
+        if (this.selectedEdgeId === id) this.clearSelection();
+      } else {
+        // removeNode may cascade-delete edges including the selected one,
+        // or revert plastic edges bound to a deleted modulator. Resync.
+        this.graph.removeNode(id);
+        if (this.selectedEdgeId && !this.graph.edges.has(this.selectedEdgeId)) {
+          this.clearSelection();
+        }
+      }
       this.hideMenu();
       this.callbacks.onChange?.();
     });
@@ -477,8 +552,10 @@ export class NeuralEditor {
       showEdgeLabels: true,
       hoverNodeId: this.hoverNodeId,
       hoverEdgeId: this.hoverEdgeId,
+      selectedEdgeId: this.selectedEdgeId,
       dragPreview: this.linkDrag ? { start: this.linkDrag.start, end: this.linkDrag.end } : null,
       collapsedGroups: this.collapsedGroups
     });
+    if (this.inspector) this.inspector.update(this.selectedEdgeId);
   }
 }

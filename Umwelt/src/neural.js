@@ -732,6 +732,10 @@ export class NeuralGraph {
     return out;
   }
 
+  getModulatorNodes() {
+    return [...this.nodes.values()].filter((node) => (node.neuronType ?? node.type) === "modulator");
+  }
+
   toConnectionsObject() {
     const aggregate = Object.fromEntries(CONNECTION_ORDER.map((id) => [id, 0]));
 
