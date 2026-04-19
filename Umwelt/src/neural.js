@@ -17,6 +17,7 @@
 } from "./config.js";
 import { clamp, lerp } from "./math.js";
 import { KIND_TO_GROUP } from "./renderer/graph.js";
+import { LEARNING_RATE, WEIGHT_DECAY_RATE } from "./neural/constants.js";
 
 const SENSOR_NODE_TYPES = new Set(["sensor_on"]);
 const EDITABLE_NODE_TYPES = new Set(["inter_exc", "inter_inh", "modulator"]);
@@ -626,9 +627,12 @@ export class NeuralGraph {
       const toNode = this.nodes.get(edge.toId);
       if (!fromNode || !toNode) continue;
       const sourceSignal = clamp(feedbackAwareSignal(fromNode, toNode, nodeSignals), 0, 1);
-      edgeSignals[edge.id] = sourceSignal * clampWeight(edge.weight);
+      const effectiveWeight = edge.plastic
+        ? clampToDaleLaw(Number.isFinite(edge.w) ? edge.w : edge.weight)
+        : clampWeight(edge.weight);
+      edgeSignals[edge.id] = sourceSignal * effectiveWeight;
       if ((fromNode.neuronType ?? fromNode.type) === "modulator") {
-        gainByTarget[toNode.id] *= gainFromModulatorSignal(sourceSignal, edge.weight);
+        gainByTarget[toNode.id] *= gainFromModulatorSignal(sourceSignal, effectiveWeight);
       } else if (isInhibitoryOutput(fromNode)) {
         inhibitoryByTarget[toNode.id] += edgeSignals[edge.id];
         additiveByTarget[toNode.id] -= edgeSignals[edge.id];
@@ -698,7 +702,28 @@ export class NeuralGraph {
       }
     }
 
+    if (commit) this.updatePlasticWeights(nodeSignals);
+
     return { nodeSignals, edgeSignals, gainByTarget, additiveByTarget, nextStateById, nextAdaptById, nextHReboundById };
+  }
+
+  // Modulated Hebbian weight update. Runs after node activations for the
+  // current tick have been computed, so pre/post/mod reflect *this* tick
+  // — evaluation of the same tick used the weights as they stood at the
+  // end of the previous tick (spec §4 order).
+  updatePlasticWeights(nodeSignals) {
+    for (const edge of this.edges.values()) {
+      if (!edge.plastic) continue;
+      const modId = edge.mod_source_id;
+      if (!modId || !this.nodes.has(modId)) continue;
+      const pre = clamp(nodeSignals[edge.fromId] ?? 0, 0, 1);
+      const post = clamp(nodeSignals[edge.toId] ?? 0, 0, 1);
+      const mod = clamp(nodeSignals[modId] ?? 0, 0, 1);
+      const current = Number.isFinite(edge.w) ? edge.w : edge.weight;
+      const dw = LEARNING_RATE * pre * post * mod;
+      const decay = WEIGHT_DECAY_RATE * (edge.weight - current);
+      edge.w = clampToDaleLaw(current + dw + decay);
+    }
   }
 
   getMotorOutputs(nodeSignals) {
