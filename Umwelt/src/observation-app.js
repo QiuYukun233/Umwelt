@@ -18,10 +18,13 @@ import { SensorConfig } from "./sensor-config.js";
 import { ACTIVE_CREATURE } from "./creatures/index.js";
 import { Observation } from "./ui/observation.js";
 import { NeuralEditor } from "./ui/editor.js";
-
-const STORAGE_KEY = "umwelt_circuit";
-const STORAGE_VERSION = 7;
-const MIGRATABLE_STORAGE_VERSION = 6;
+import {
+  applyEnvelope,
+  downloadSaveJSON,
+  parseImportText,
+  readSavedEnvelope,
+  writeSavedEnvelope,
+} from "./io/schema.js";
 
 class ObservationApp {
   constructor() {
@@ -166,42 +169,23 @@ class ObservationApp {
   // ── Persistence ──
 
   saveCircuit() {
-    try {
-      const data = {
-        version: STORAGE_VERSION,
-        graph: this.graph.serialize(),
-        sensorEnabled: { ...this.sensorEnabled },
-        bodyParams: { ...this.world.bodyParams },
-        sensorConfig: this.sensorConfig.toJSON()
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (_) {}
+    writeSavedEnvelope(this);
   }
 
   loadCircuit() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return false;
-      const data = JSON.parse(raw);
-      if ((data.version ?? 1) < MIGRATABLE_STORAGE_VERSION) {
-        localStorage.removeItem(STORAGE_KEY);
-        return false;
-      }
-      if (data.sensorConfig) {
-        this.sensorConfig = SensorConfig.fromJSON(data.sensorConfig);
+    const data = readSavedEnvelope();
+    if (!data) return false;
+    applyEnvelope(this, data, {
+      onSensorConfig: (cfg) => {
+        // Constructor-time path: editor not wired yet. The _applySensorConfig
+        // branch used at import time calls editor.setSensorConfig; at load
+        // time that happens after the constructor threads editor through.
+        this.sensorConfig = cfg;
         this.rebuildDerived();
         this.world.setSensorDefs(this.sensorDefs, this.sourceOrder, this.sensorOrder);
-      }
-      this.graph.deserialize(data.graph);
-      this.graph.ensureAnchors(LOGIC_CANVAS.width, LOGIC_CANVAS.height, false, this.sourceDefs);
-      if (data.sensorEnabled) this.sensorEnabled = cloneSensorEnabled(data.sensorEnabled, this.sensorDefs);
-      if (data.bodyParams) {
-        this.world.bodyParams = { turnScale: data.bodyParams.turnScale ?? 1, speedScale: data.bodyParams.speedScale ?? 1 };
-      }
-      return true;
-    } catch (_) {
-      return false;
-    }
+      },
+    });
+    return true;
   }
 
   // ── UI callbacks ──
@@ -270,35 +254,18 @@ class ObservationApp {
   }
 
   _exportCircuit() {
-    const data = {
-      graph: this.graph.serialize(),
-      sensorEnabled: { ...this.sensorEnabled },
-      bodyParams: { ...this.world.bodyParams },
-      sensorConfig: this.sensorConfig.toJSON(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `umwelt-circuit-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadSaveJSON(this);
   }
 
   _importCircuit(text) {
-    try {
-      const data = JSON.parse(text);
-      if (!data.graph) return;
-      if (data.sensorConfig) this._applySensorConfig(SensorConfig.fromJSON(data.sensorConfig));
-      this.graph.deserialize(data.graph);
-      this.graph.ensureAnchors(LOGIC_CANVAS.width, LOGIC_CANVAS.height, false, this.sourceDefs);
-      if (data.sensorEnabled) this.sensorEnabled = cloneSensorEnabled(data.sensorEnabled, this.sensorDefs);
-      if (data.bodyParams) {
-        this.world.bodyParams = { turnScale: data.bodyParams.turnScale ?? 1, speedScale: data.bodyParams.speedScale ?? 1 };
-        this.editor.setBodyParams(this.world.bodyParams);
-      }
-      this._handleGraphChange();
-    } catch (_) { /* invalid JSON */ }
+    const data = parseImportText(text);
+    if (!data) return;
+    applyEnvelope(this, data, {
+      onSensorConfig: (cfg) => this._applySensorConfig(cfg),
+      onWarn: (msg) => this.world.log("danger", `导入：${msg}`),
+    });
+    if (data.bodyParams) this.editor.setBodyParams(this.world.bodyParams);
+    this._handleGraphChange();
   }
 
   _resize() {

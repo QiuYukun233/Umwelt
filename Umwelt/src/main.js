@@ -9,10 +9,13 @@ import { DeathOverlay } from "./ui/death.js";
 import { Sidebar } from "./ui/sidebar.js";
 import { SensorConfig } from "./sensor-config.js";
 import { ACTIVE_CREATURE } from "./creatures/index.js";
-
-const STORAGE_KEY = "umwelt_circuit";
-const STORAGE_VERSION = 7; // bumped: plastic synapses (edges carry plastic/mod_source_id/w)
-const MIGRATABLE_STORAGE_VERSION = 6; // v6 saves load via in-deserialize migration; < v6 is wiped
+import {
+  applyEnvelope,
+  downloadSaveJSON,
+  parseImportText,
+  readSavedEnvelope,
+  writeSavedEnvelope,
+} from "./io/schema.js";
 
 class App {
   constructor() {
@@ -255,86 +258,46 @@ class App {
   }
 
   saveCircuit() {
-    try {
-      const data = {
-        version: STORAGE_VERSION,
-        graph: this.graph.serialize(),
-        sensorEnabled: { ...this.sensorEnabled },
-        bodyParams: { ...this.world.bodyParams },
-        sensorConfig: this.sensorConfig.toJSON()
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (_) { /* quota exceeded or private mode — silent */ }
+    writeSavedEnvelope(this);
   }
 
   loadCircuit() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return false;
-      const data = JSON.parse(raw);
-      if ((data.version ?? 1) < MIGRATABLE_STORAGE_VERSION) {
-        localStorage.removeItem(STORAGE_KEY);
-        return false;
-      }
-      // Restore sensor config
-      if (data.sensorConfig) {
-        this.sensorConfig = SensorConfig.fromJSON(data.sensorConfig);
+    const data = readSavedEnvelope();
+    if (!data) return false;
+    applyEnvelope(this, data, {
+      onSensorConfig: (cfg) => {
+        // Constructor-time path: sidebar/editor don't exist yet, so install
+        // the config directly. The caller wires sidebar/editor afterward.
+        this.sensorConfig = cfg;
         this.rebuildDerived();
         this.world.setSensorDefs(this.sensorDefs, this.sourceOrder, this.sensorOrder);
-      }
-      this.graph.deserialize(data.graph);
-      this.graph.ensureAnchors(LOGIC_CANVAS.width, LOGIC_CANVAS.height, false, this.sourceDefs);
-      if (data.sensorEnabled) this.sensorEnabled = cloneSensorEnabled(data.sensorEnabled, this.sensorDefs);
-      if (data.bodyParams) {
-        this.world.bodyParams = { turnScale: data.bodyParams.turnScale ?? 1, speedScale: data.bodyParams.speedScale ?? 1 };
-      }
-      return true;
-    } catch (_) {
-      return false;
-    }
+      },
+    });
+    return true;
   }
 
   exportCircuit() {
-    const data = {
-      graph: this.graph.serialize(),
-      sensorEnabled: { ...this.sensorEnabled },
-      bodyParams: { ...this.world.bodyParams },
-      sensorConfig: this.sensorConfig.toJSON()
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `umwelt-circuit-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadSaveJSON(this);
   }
 
   importCircuit(text) {
-    try {
-      const data = JSON.parse(text);
-      if (!data.graph) return;
-      if (data.sensorConfig) {
-        // Go through the shared install path so the sidebar 3D view,
-        // the body editor's sensorConfig reference, and the graph
-        // anchors all line up with the imported layout.
-        this._installSensorConfig(SensorConfig.fromJSON(data.sensorConfig));
-      }
-      this.graph.deserialize(data.graph);
-      this.graph.ensureAnchors(LOGIC_CANVAS.width, LOGIC_CANVAS.height, false, this.sourceDefs);
-      if (data.sensorEnabled) this.sensorEnabled = cloneSensorEnabled(data.sensorEnabled, this.sensorDefs);
-      if (data.bodyParams) {
-        this.world.bodyParams = { turnScale: data.bodyParams.turnScale ?? 1, speedScale: data.bodyParams.speedScale ?? 1 };
-        this.sidebar.editor.setBodyParams(this.world.bodyParams);
-      }
-      this.connections = this.graph.toConnectionsObject();
-      this.behavior = inferBehavior(this.connections, this.sensorEnabled, this.sensorDefs);
-      this.topbar.renderBehavior(this.behavior);
-      this.footer.renderBehavior(this.behavior);
-      this.sidebar.editor.fitView();
-      this.refreshMetricsSnapshot();
-      this.saveCircuit();
-    } catch (_) { /* invalid JSON — silent */ }
+    const data = parseImportText(text);
+    if (!data) return;
+    // Go through the shared install path so sidebar 3D view, body editor's
+    // sensorConfig reference, and graph anchors all line up with the
+    // imported layout.
+    applyEnvelope(this, data, {
+      onSensorConfig: (cfg) => this._installSensorConfig(cfg),
+      onWarn: (msg) => this.world.log("danger", `导入：${msg}`),
+    });
+    if (data.bodyParams) this.sidebar.editor.setBodyParams(this.world.bodyParams);
+    this.connections = this.graph.toConnectionsObject();
+    this.behavior = inferBehavior(this.connections, this.sensorEnabled, this.sensorDefs);
+    this.topbar.renderBehavior(this.behavior);
+    this.footer.renderBehavior(this.behavior);
+    this.sidebar.editor.fitView();
+    this.refreshMetricsSnapshot();
+    this.saveCircuit();
   }
 
   loop(timestamp) {
