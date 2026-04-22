@@ -5,8 +5,13 @@
 **/.env.*
 
 # personal editor/tool state
-.claude/
-**/.claude/
+# Narrow from `.claude/` → `.claude/*` so project-level settings.json
+# (team-shared by official convention) can be tracked while
+# settings.local.json, worktrees/, launch.json, etc. stay ignored.
+.claude/*
+!.claude/settings.json
+**/.claude/*
+!**/.claude/settings.json
 
 # headless browser profiles
 .edge-headless/
