@@ -371,7 +371,8 @@ export class WorldRenderer {
   render(time, sensorEnabled = {}, sensorDefs = SENSOR_DEFINITIONS) {
     const c = this.ctx;
     const p = this.palette;
-    const ant = this.world.ant;
+    const ant = this.world.focusedAnt;
+    if (!ant) return;   // no focused ant — skip this frame's render
     const tSec = time * 0.001;
 
     // 1. Chemical field background mosaic

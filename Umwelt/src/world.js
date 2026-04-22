@@ -162,7 +162,26 @@ export class World {
     this.foodField   = this.fields.chem_A;
     this.dangerField = this.fields.chem_D;
     this.metrics = createMetrics();
+    // Multi-ant groundwork: stable int id per AntBody (allocated by nextAntId),
+    // parallel `ants` array, `focusedAntId` naming the observed one. Step 1 is
+    // zero-behavior-change — `this.ant` remains authoritative and all internal
+    // reads still use it; `ants` mirrors it for external code and eventual
+    // batch iteration. Feature 2 flips the polarity (ants becomes canonical,
+    // this.ant is deleted, serialize switches to ants[]).
+    this.nextAntId = 0;
+    this.focusedAntId = 0;
+    this.ants = [];
     this.reset();
+  }
+
+  /**
+   * The ant currently being observed (HUD / metrics / camera). Returns null
+   * if no ant matches focusedAntId — callers must guard. Deliberately does
+   * NOT fall back to ants[0]: a null focus is the honest signal that
+   * nothing can be shown, e.g. after a total wipe or before spawn.
+   */
+  get focusedAnt() {
+    return this.ants.find((a) => a.id === this.focusedAntId) ?? null;
   }
 
   setSize(width, height) {
@@ -218,6 +237,14 @@ export class World {
     const sensorOrder = this._sensorOrder ?? SENSOR_ORDER;
     this.prevSensorRaw = Object.fromEntries(sensorOrder.map((id) => [id, 0]));
     this.ant = new AntBody(this.w * 0.5, this.h * 0.55, -Math.PI / 2 + randomBetween(-0.2, 0.2));
+    // Assign stable id and publish to the ants[] mirror. Step 1: first
+    // spawn on a fresh World gets id=0, which matches the constructor's
+    // focusedAntId default. Subsequent reset() calls re-use id=0 so save
+    // payloads (v8, which don't carry focusedAntId) round-trip with the
+    // same focus. Feature 2 will allocate fresh ids per respawn.
+    this.ant.id = 0;
+    this.nextAntId = 1;
+    this.ants = [this.ant];
     this.metrics = createMetrics();
     for (const k of CHEM_KEYS) this.fields[k].resize(this.w, this.h);
     this.rebuildEnvironment();

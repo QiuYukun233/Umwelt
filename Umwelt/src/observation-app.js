@@ -157,7 +157,7 @@ class ObservationApp {
       gland_beta:    motors.gland_beta,
       mandible:      motors.mandible,
       speed: this.world.metrics.speed,
-      energy: Math.max(0, Math.min(1, this.world.ant.energy / CONFIG.MAX_ENERGY)),
+      energy: Math.max(0, Math.min(1, (this.world.focusedAnt?.energy ?? 0) / CONFIG.MAX_ENERGY)),
       turn: Math.max(0, Math.min(1, Math.abs(turnSigned) / (CONFIG.TURN_GAIN * bp.turnScale * 1.1))),
       turnSigned,
       sensorDrain: this.sensorOrder.reduce(
@@ -274,7 +274,8 @@ class ObservationApp {
   }
 
   _updateHUD() {
-    const ant = this.world.ant;
+    const ant = this.world.focusedAnt;
+    if (!ant) return;   // nothing to observe — skip HUD updates this frame
     const rw = 170, rh = 100;
     this.obs.setReticle(ant.x - rw / 2, ant.y - rh / 2, rw, rh);
 
