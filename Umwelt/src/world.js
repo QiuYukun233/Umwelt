@@ -1,6 +1,7 @@
 import { CONFIG, CHEM_KEYS, CHEM_SPECIES, SENSOR_ORDER, SOURCE_ORDER } from "./config.js";
 import { clamp, normAngle, randomBetween, respawnPoint, TAU, wrapValue } from "./math.js";
 import { AntBody } from "./creatures/ant-body.js";
+import { encodeField, decodeField } from "./io/fields.js";
 
 export class ChemicalField {
   constructor(width, height, cellSize) {
@@ -586,5 +587,115 @@ export class World {
     this.ant.speed = 0;
     this.deathReason = this.alive - this.lastDangerTime < 1.2 ? "能量耗尽，最后阶段连续撞上危险。" : "能量耗尽，没有及时找到足够食物。";
     this.log("death", `死亡原因：${this.deathReason} 存活 ${this.alive.toFixed(1)}s`);
+  }
+
+  /**
+   * Serialize world state for save/load (schema v8).
+   *
+   * Captures ant pose + energy + trail + gland reservoirs, environmental
+   * items (foods, dangers), chem fields (base64-encoded raw bytes), and
+   * the sim clock. behaviorLog is deliberately ephemeral.
+   */
+  serializeWorld() {
+    return {
+      alive: this.alive ?? 0,
+      generation: this.generation ?? 1,
+      foodEaten: this.foodEaten ?? 0,
+      ant: {
+        x: this.ant.x,
+        y: this.ant.y,
+        angle: this.ant.angle,
+        energy: this.ant.energy,
+        trail: this.ant.trail.map((p) => ({ x: p.x, y: p.y })),
+        glandAlpha: { ...this.ant.glandAlpha },
+        glandBeta:  { ...this.ant.glandBeta  },
+      },
+      foods:   this.foods.map((f)   => ({ id: f.id, x: f.x, y: f.y, r: f.r, phase: f.phase })),
+      dangers: this.dangers.map((d) => ({ id: d.id, x: d.x, y: d.y, r: d.r, phase: d.phase })),
+      fields: {
+        chem_A: encodeField(this.fields.chem_A),
+        chem_B: encodeField(this.fields.chem_B),
+        chem_C: encodeField(this.fields.chem_C),
+        chem_D: encodeField(this.fields.chem_D),
+      },
+    };
+  }
+
+  /**
+   * Restore world state from a v8 `world` block. Tolerant of missing
+   * sub-blocks — leaves the live value in place when a field is absent or
+   * malformed. Does NOT call rebuildEnvironment() or warmupFields();
+   * restoring a save is supposed to be idempotent. Field dimension
+   * mismatches are logged by decodeField and the corresponding live field
+   * is left as-is (see io/fields.js comment).
+   */
+  /**
+   * @param {object|null} data
+   * @param {(msg: string) => void} [onWarn]  field-mismatch callback; caller
+   *   (e.g. import UI) can show the message to the user. console.warn always
+   *   fires in addition, regardless of this callback.
+   * @returns {string[]} warnings collected (empty on clean restore)
+   */
+  deserializeWorld(data, onWarn = null) {
+    const warnings = [];
+    const collect = (msg) => { warnings.push(msg); if (onWarn) onWarn(msg); };
+    if (!data || typeof data !== "object") return warnings;
+
+    if (Number.isFinite(data.alive))      this.alive      = data.alive;
+    if (Number.isFinite(data.generation)) this.generation = data.generation;
+    if (Number.isFinite(data.foodEaten))  this.foodEaten  = data.foodEaten;
+
+    if (data.ant && typeof data.ant === "object") {
+      const a = data.ant;
+      if (Number.isFinite(a.x))      this.ant.x      = a.x;
+      if (Number.isFinite(a.y))      this.ant.y      = a.y;
+      if (Number.isFinite(a.angle))  this.ant.angle  = a.angle;
+      if (Number.isFinite(a.energy)) this.ant.energy = a.energy;
+      if (Array.isArray(a.trail)) {
+        this.ant.trail = a.trail
+          .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+          .map((p) => ({ x: p.x, y: p.y }));
+      }
+      if (a.glandAlpha) {
+        for (const k of ["current", "capacity", "recovery"]) {
+          if (Number.isFinite(a.glandAlpha[k])) this.ant.glandAlpha[k] = a.glandAlpha[k];
+        }
+      }
+      if (a.glandBeta) {
+        for (const k of ["current", "capacity", "recovery"]) {
+          if (Number.isFinite(a.glandBeta[k])) this.ant.glandBeta[k] = a.glandBeta[k];
+        }
+      }
+    }
+
+    if (Array.isArray(data.foods)) {
+      this.foods = data.foods.map((f, i) => ({
+        id:    Number.isFinite(f?.id)    ? f.id    : i + 1,
+        x:     Number.isFinite(f?.x)     ? f.x     : this.w * 0.5,
+        y:     Number.isFinite(f?.y)     ? f.y     : this.h * 0.5,
+        r:     Number.isFinite(f?.r)     ? f.r     : 6,
+        phase: Number.isFinite(f?.phase) ? f.phase : 0,
+      }));
+      // Keep environmentState in sync so the topbar slider reflects the
+      // restored density and applyEnvironment()/restart() behave sensibly.
+      this.environmentState.foodDensity = this.foods.length;
+    }
+    if (Array.isArray(data.dangers)) {
+      this.dangers = data.dangers.map((d, i) => ({
+        id:    Number.isFinite(d?.id)    ? d.id    : i + 1,
+        x:     Number.isFinite(d?.x)     ? d.x     : this.w * 0.5,
+        y:     Number.isFinite(d?.y)     ? d.y     : this.h * 0.5,
+        r:     Number.isFinite(d?.r)     ? d.r     : 8,
+        phase: Number.isFinite(d?.phase) ? d.phase : 0,
+      }));
+      this.environmentState.dangerDensity = this.dangers.length;
+    }
+
+    if (data.fields && typeof data.fields === "object") {
+      for (const k of CHEM_KEYS) {
+        if (data.fields[k]) decodeField(data.fields[k], this.fields[k], collect);
+      }
+    }
+    return warnings;
   }
 }
