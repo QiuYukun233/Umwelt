@@ -162,12 +162,9 @@ export class World {
     this.foodField   = this.fields.chem_A;
     this.dangerField = this.fields.chem_D;
     this.metrics = createMetrics();
-    // Multi-ant groundwork: stable int id per AntBody (allocated by nextAntId),
-    // parallel `ants` array, `focusedAntId` naming the observed one. Step 1 is
-    // zero-behavior-change — `this.ant` remains authoritative and all internal
-    // reads still use it; `ants` mirrors it for external code and eventual
-    // batch iteration. Feature 2 flips the polarity (ants becomes canonical,
-    // this.ant is deleted, serialize switches to ants[]).
+    // ants[] is authoritative; each AntBody carries a stable `id`. focusedAntId
+    // names the one shown in HUD / metrics / inspector. Per-ant death removes
+    // an ant from this list (id never reused — nextAntId keeps counting).
     this.nextAntId = 0;
     this.focusedAntId = 0;
     this.ants = [];
@@ -184,15 +181,25 @@ export class World {
     return this.ants.find((a) => a.id === this.focusedAntId) ?? null;
   }
 
+  /**
+   * Back-compat alias for `focusedAnt`. Many test scripts and a few internal
+   * call sites still write `world.ant.x = ...` style code; the getter lets
+   * them mutate the focused ant in place. Note there is no setter — the
+   * authoritative store is `ants[]`, not a single field.
+   */
+  get ant() {
+    return this.focusedAnt;
+  }
+
   setSize(width, height) {
     const newW = Math.max(320, width);
     const newH = Math.max(240, height);
     const dimsChanged = newW !== this.w || newH !== this.h;
     this.w = newW;
     this.h = newH;
-    if (this.ant) {
-      this.ant.x = clamp(this.ant.x, 0, this.w);
-      this.ant.y = clamp(this.ant.y, 0, this.h);
+    for (const ant of this.ants) {
+      ant.x = clamp(ant.x, 0, this.w);
+      ant.y = clamp(ant.y, 0, this.h);
     }
     for (const item of this.foods) {
       item.x = clamp(item.x, CONFIG.FOOD_MARGIN, this.w - CONFIG.FOOD_MARGIN);
@@ -236,22 +243,90 @@ export class World {
     this.turnRate = 0;
     const sensorOrder = this._sensorOrder ?? SENSOR_ORDER;
     this.prevSensorRaw = Object.fromEntries(sensorOrder.map((id) => [id, 0]));
-    this.ant = new AntBody(this.w * 0.5, this.h * 0.55, -Math.PI / 2 + randomBetween(-0.2, 0.2));
-    // Assign stable id and publish to the ants[] mirror. Step 1: first
-    // spawn on a fresh World gets id=0, which matches the constructor's
-    // focusedAntId default. Subsequent reset() calls re-use id=0 so save
-    // payloads (v8, which don't carry focusedAntId) round-trip with the
-    // same focus. Feature 2 will allocate fresh ids per respawn.
-    this.ant.id = 0;
-    this.nextAntId = 1;
-    this.ants = [this.ant];
+    // Fresh ants[] and id allocator. spawn one ant near the world centre to
+    // preserve single-ant behaviour on reset; multi-ant scenarios call
+    // spawnAnts() explicitly after reset.
+    this.ants = [];
+    this.nextAntId = 0;
+    this.spawnAnts(1, {
+      origin: { x: this.w * 0.5, y: this.h * 0.55 },
+      radius: 0,
+      headingMode: "outward",
+      headingBase: -Math.PI / 2,
+      headingJitter: 0.2,
+    });
+    this.focusedAntId = this.ants[0]?.id ?? 0;
     this.metrics = createMetrics();
     for (const k of CHEM_KEYS) this.fields[k].resize(this.w, this.h);
     this.rebuildEnvironment();
   }
 
+  /**
+   * Spawn `n` ants around a centre point. Allocates fresh ids from
+   * `nextAntId` (never reused — see per-ant death policy). Returns the
+   * spawned AntBody instances in insertion order so callers can pick
+   * the focused one.
+   *
+   * @param {number} n
+   * @param {object} [options]
+   * @param {{x:number,y:number}} [options.origin]   centre point. Default: world centre.
+   * @param {number} [options.radius]                spawn radius around origin. Default: 0 (point spawn).
+   * @param {"random_radial"|"outward"} [options.headingMode]
+   *   "random_radial": each ant heads outward from origin (default for n>1).
+   *   "outward": same, with `headingBase` as the centre and `headingJitter` noise (default for n=1).
+   * @param {number} [options.headingBase]           default heading (rad) when headingMode="outward".
+   * @param {number} [options.headingJitter]         random ± offset on heading (rad).
+   */
+  spawnAnts(n, options = {}) {
+    const cx = options.origin?.x ?? this.w * 0.5;
+    const cy = options.origin?.y ?? this.h * 0.5;
+    const radius = options.radius ?? 0;
+    const mode = options.headingMode ?? (n > 1 ? "random_radial" : "outward");
+    const headingBase = options.headingBase ?? -Math.PI / 2;
+    const headingJitter = options.headingJitter ?? 0.2;
+    const spawned = [];
+    for (let i = 0; i < n; i++) {
+      const theta = randomBetween(0, TAU);
+      const r = radius > 0 ? Math.sqrt(Math.random()) * radius : 0;
+      const x = clamp(cx + Math.cos(theta) * r, 0, this.w);
+      const y = clamp(cy + Math.sin(theta) * r, 0, this.h);
+      let angle;
+      if (mode === "random_radial") {
+        // Outward from origin so ants disperse on t=0. Falls back to a
+        // uniform random heading at the exact centre (r=0).
+        angle = r > 1e-6 ? Math.atan2(y - cy, x - cx) : theta;
+      } else {
+        angle = headingBase + randomBetween(-headingJitter, headingJitter);
+      }
+      const ant = new AntBody(x, y, angle);
+      ant.id = this.nextAntId++;
+      this.ants.push(ant);
+      spawned.push(ant);
+    }
+    return spawned;
+  }
+
+  /**
+   * Remove an ant by id or instance. Does NOT reuse the id — death is
+   * permanent in the current run, and `nextAntId` keeps counting so
+   * future spawns get unique ids. If the focused ant dies, focus stays
+   * pointed at its id (focusedAnt becomes null), signalling the HUD to
+   * show "no focus" rather than silently switching to a different ant.
+   */
+  killAnt(antOrId) {
+    const id = typeof antOrId === "object" ? antOrId?.id : antOrId;
+    if (id === undefined || id === null) return false;
+    const idx = this.ants.findIndex((a) => a.id === id);
+    if (idx < 0) return false;
+    this.ants.splice(idx, 1);
+    return true;
+  }
+
   rebuildEnvironment() {
-    const avoid = { x: this.ant.x, y: this.ant.y, radius: 88 };
+    // Avoid disk centred on the focused ant so the first spawn doesn't drop
+    // food on top of it. Falls back to world centre when no focus exists.
+    const focus = this.focusedAnt;
+    const avoid = { x: focus?.x ?? this.w * 0.5, y: focus?.y ?? this.h * 0.5, radius: 88 };
     this.foods = Array.from({ length: this.environmentState.foodDensity }, (_, index) => {
       const point = respawnPoint(this.w, this.h, CONFIG.FOOD_MARGIN, avoid);
       return { id: index + 1, x: point.x, y: point.y, r: randomBetween(5, 8), phase: randomBetween(0, TAU) };
@@ -302,24 +377,23 @@ export class World {
   }
 
   /**
-   * Estimate a body-local coordinate frame at a fraction along the trail.
+   * Estimate a body-local coordinate frame at a fraction along an ant's trail.
+   * @param {AntBody} ant
    * @param {number} t  0 = head, 1 = tail-end
    * @returns {{ x, y, fwdX, fwdY }} position and forward direction
    */
-  _trailFrame(t) {
-    const trail = this.ant.trail;
+  _trailFrame(ant, t) {
+    const trail = ant.trail;
     const len = trail.length;
     if (len < 2) {
-      // Fallback: project backward from head
-      const dist = t * 30; // ~30px total worm length
+      const dist = t * 30;
       return {
-        x: this.ant.x - this.ant.forward.x * dist,
-        y: this.ant.y - this.ant.forward.y * dist,
-        fwdX: this.ant.forward.x,
-        fwdY: this.ant.forward.y,
+        x: ant.x - ant.forward.x * dist,
+        y: ant.y - ant.forward.y * dist,
+        fwdX: ant.forward.x,
+        fwdY: ant.forward.y,
       };
     }
-    // Trail is newest-last: index 0 = oldest, len-1 = newest (head)
     const fi = (len - 1) * (1 - t);
     const i0 = Math.max(0, Math.min(len - 1, Math.floor(fi)));
     const i1 = Math.min(len - 1, i0 + 1);
@@ -327,14 +401,13 @@ export class World {
     const p0 = trail[i0], p1 = trail[i1];
     const px = p0.x + (p1.x - p0.x) * frac;
     const py = p0.y + (p1.y - p0.y) * frac;
-    // Tangent from neighboring points
     const di0 = Math.max(0, i0 - 1);
     const di1 = Math.min(len - 1, i0 + 1);
     let dx = trail[di1].x - trail[di0].x;
     let dy = trail[di1].y - trail[di0].y;
     const dLen = Math.sqrt(dx * dx + dy * dy);
     if (dLen > 1e-6) { dx /= dLen; dy /= dLen; }
-    else { dx = this.ant.forward.x; dy = this.ant.forward.y; }
+    else { dx = ant.forward.x; dy = ant.forward.y; }
     return { x: px, y: py, fwdX: dx, fwdY: dy };
   }
 
@@ -342,11 +415,11 @@ export class World {
    * Point-sample each enabled sensor at its anatomical body position.
    * Head sensors use head position, body sensors use trail, tail sensors use trail tail.
    */
-  sampleSensors(sensorEnabled, sensorDefs, sourceOrder) {
+  sampleSensors(ant, sensorEnabled, sensorDefs, sourceOrder) {
     const outputs = Object.fromEntries(sourceOrder.map((id) => [id, 0]));
     // Pre-compute head frame (used by most sensors)
-    const headFwd = this.ant.forward;
-    const headDor = this.ant.dorsal;
+    const headFwd = ant.forward;
+    const headDor = ant.dorsal;
     const headLat = headFwd.cross(headDor);
     const antAngle = Math.atan2(headFwd.y, headFwd.x);
 
@@ -367,10 +440,10 @@ export class World {
       let wx, wy;
       if (sensor.region === "head" || !sensor.region) {
         const worldOff = headFwd.scale(o[0]).add(headDor.scale(o[1])).add(headLat.scale(o[2]));
-        wx = this.ant.x + worldOff.x;
-        wy = this.ant.y + worldOff.y;
+        wx = ant.x + worldOff.x;
+        wy = ant.y + worldOff.y;
       } else {
-        const frame = this._trailFrame(sensor.bodyT ?? 0.5);
+        const frame = this._trailFrame(ant, sensor.bodyT ?? 0.5);
         const fx = frame.fwdX, fy = frame.fwdY;
         const lx = -fy, ly = fx;
         wx = frame.x + fx * o[0] + lx * o[2];
@@ -452,26 +525,54 @@ export class World {
     }
   }
 
-  composeSourceOutputs(sensorEnabled, dt, commit = false, sensorDefs = null, sourceOrder = null) {
+  /**
+   * Sample the full source map for one ant. `commit=true` writes
+   * prevSensorRaw — done only for the focused ant since that buffer is
+   * a single-ant HUD/debug shape.
+   *
+   * The first positional argument is optional and defaults to `focusedAnt`
+   * to preserve the legacy single-ant call shape. Pass an explicit
+   * `AntBody` for per-ant sampling in multi-ant loops.
+   */
+  composeSourceOutputs(antOrEnabled, sensorEnabledOrDt, dtOrCommit = false, commitOrSensorDefs = null, sensorDefsOrSourceOrder = null, sourceOrder = null) {
+    // Detect legacy 5-arg call shape: composeSourceOutputs(sensorEnabled, dt, commit, sensorDefs, sourceOrder).
+    // New shape: composeSourceOutputs(ant, sensorEnabled, dt, commit, sensorDefs, sourceOrder).
+    let ant, sensorEnabled, dt, commit, sensorDefs, srcOrder;
+    if (antOrEnabled && typeof antOrEnabled === "object" && "x" in antOrEnabled && "y" in antOrEnabled) {
+      ant = antOrEnabled;
+      sensorEnabled = sensorEnabledOrDt;
+      dt = dtOrCommit;
+      commit = commitOrSensorDefs ?? false;
+      sensorDefs = sensorDefsOrSourceOrder;
+      srcOrder = sourceOrder;
+    } else {
+      ant = this.focusedAnt;
+      sensorEnabled = antOrEnabled;
+      dt = sensorEnabledOrDt;
+      commit = dtOrCommit ?? false;
+      sensorDefs = commitOrSensorDefs;
+      srcOrder = sensorDefsOrSourceOrder;
+    }
     const sd = sensorDefs ?? this._sensorDefs ?? [];
-    const so = sourceOrder ?? this._sourceOrder ?? SOURCE_ORDER;
-    const outputs = this.sampleSensors(sensorEnabled, sd, so);
+    const so = srcOrder ?? this._sourceOrder ?? SOURCE_ORDER;
+    if (!ant) {
+      // No ant to sample around — return all-zero outputs.
+      return Object.fromEntries(so.map((id) => [id, 0]));
+    }
+    const outputs = this.sampleSensors(ant, sensorEnabled, sd, so);
     if (commit) {
       for (const sensor of sd) {
         this.prevSensorRaw[sensor.id] = outputs[sensor.id] ?? 0;
       }
     }
-    // Ant body-internal state — per ant-design-spec.md §3.5.
-    // `energy` is the glycogen storage level (1 = full).
-    // `damage` fires when the ant is inside a danger plume above threshold.
-    outputs.energy = clamp(this.ant.energy / CONFIG.MAX_ENERGY, 0, 1);
-    const dangerLevel = this.dangerField.sample(this.ant.x, this.ant.y);
+    outputs.energy = clamp(ant.energy / CONFIG.MAX_ENERGY, 0, 1);
+    const dangerLevel = this.dangerField.sample(ant.x, ant.y);
     outputs.damage = clamp((dangerLevel - CONFIG.DANGER_THRESHOLD) / (1 - CONFIG.DANGER_THRESHOLD), 0, 1);
     return outputs;
   }
 
   previewSourceOutputs(sensorEnabled, dt = CONFIG.FIXED_DT, sensorDefs = null, sourceOrder = null) {
-    return this.composeSourceOutputs(sensorEnabled, dt, false, sensorDefs, sourceOrder);
+    return this.composeSourceOutputs(this.focusedAnt, sensorEnabled, dt, false, sensorDefs, sourceOrder);
   }
 
   resolveMotorLevels(motorInputs) {
@@ -485,109 +586,163 @@ export class World {
     };
   }
 
+  /**
+   * Advance the simulation one tick.
+   *
+   * `motorInputs` is currently a single object applied to every ant — this
+   * is the A=1 transition shape. Sub-step 1d widens the contract to
+   * batched motors (one entry per ant from stepBatch).
+   *
+   * `sourceOutputsOverride`, when supplied, is applied to the *focused*
+   * ant only; replay scenarios are single-ant.
+   */
   step(dt, motorInputs, sensorEnabled, sourceOutputsOverride = null) {
     if (this.dead) return;
     this.alive += dt;
 
     const motors = this.resolveMotorLevels(motorInputs);
 
-    // Environmental emissions: food sources release ChemA, danger sources ChemD.
+    // Environmental emissions — once per tick, ant count independent.
     for (const food of this.foods)
       this.fields.chem_A.inject(food.x, food.y, CONFIG.FOOD_EMIT_RATE * dt);
     for (const danger of this.dangers)
       this.fields.chem_D.inject(danger.x, danger.y, CONFIG.DANGER_EMIT_RATE * dt);
 
-    // Ant gland secretions: gland_α → ChemB (ground deposit at the
-    // ant's position), gland_β → ChemC (air release from the head).
-    // Both draw from their reservoir; empty reservoirs refill passively.
-    this._updateGland(this.ant.glandAlpha, motors.gland_alpha, CONFIG.GLAND_ALPHA_EMIT_RATE, this.fields.chem_B, this.ant.x, this.ant.y, dt);
-    this._updateGland(this.ant.glandBeta,  motors.gland_beta,  CONFIG.GLAND_BETA_EMIT_RATE,  this.fields.chem_C, this.ant.x, this.ant.y, dt);
+    // Per-ant gland secretions: each ant draws from its own reservoirs.
+    for (const ant of this.ants) {
+      this._updateGland(ant.glandAlpha, motors.gland_alpha, CONFIG.GLAND_ALPHA_EMIT_RATE, this.fields.chem_B, ant.x, ant.y, dt);
+      this._updateGland(ant.glandBeta,  motors.gland_beta,  CONFIG.GLAND_BETA_EMIT_RATE,  this.fields.chem_C, ant.x, ant.y, dt);
+    }
 
-    // Diffuse and decay all four fields.
+    // Field diffusion / decay — once per tick.
     for (const k of CHEM_KEYS) {
       const p = CHEM_SPECIES[k];
       this.fields[k].update(dt, p.diffusion, p.decay);
     }
 
-    const sourceOutputs = sourceOutputsOverride ?? this.composeSourceOutputs(sensorEnabled, dt, true);
     const sensorOrder = this._sensorOrder ?? SENSOR_ORDER;
-    const sensorDrain = sensorOrder.reduce((sum, id) => sum + (sensorEnabled[id] ? Math.abs(sourceOutputs[id] ?? 0) : 0), 0) * CONFIG.SENSOR_ENERGY_COST;
-    const { turnRate, turnSigned, thrustLevel } = this.ant.step(dt, motors, this.bodyParams);
-    this.turnRate = turnRate;
-    const wrapped = this.wrapAntTrail();
-    if (!wrapped) this.updateTrail();
-    this.ant.energy = Math.max(0, this.ant.energy - (CONFIG.ENERGY_DECAY + thrustLevel * CONFIG.ENERGY_MOTION_COST + sensorDrain) * dt);
-    this.consumeFood();
-    this.handleDangers(dt);
-    this.handleEnergyWarnings();
-    this.updateMetrics(sourceOutputs, motors, turnSigned, sensorDrain);
-    if (this.ant.energy <= 0) this.handleDeath();
+    const focusedId = this.focusedAntId;
+    let focusedSourceOutputs = null;
+    let focusedTurnSigned = 0;
+    let focusedSensorDrain = 0;
+    const deaths = [];
+
+    // Per-ant: sense → body step → energy → food → danger.
+    for (const ant of this.ants) {
+      const isFocused = ant.id === focusedId;
+      const so = isFocused && sourceOutputsOverride
+        ? sourceOutputsOverride
+        : this.composeSourceOutputs(ant, sensorEnabled, dt, isFocused);
+      const sensorDrain = sensorOrder.reduce(
+        (sum, id) => sum + (sensorEnabled[id] ? Math.abs(so[id] ?? 0) : 0),
+        0,
+      ) * CONFIG.SENSOR_ENERGY_COST;
+      const { turnRate, turnSigned, thrustLevel } = ant.step(dt, motors, this.bodyParams);
+      if (isFocused) {
+        this.turnRate = turnRate;
+        focusedSourceOutputs = so;
+        focusedTurnSigned = turnSigned;
+        focusedSensorDrain = sensorDrain;
+      }
+      const wrapped = this.wrapAnt(ant);
+      if (!wrapped) this.updateTrail(ant);
+      ant.energy = Math.max(
+        0,
+        ant.energy - (CONFIG.ENERGY_DECAY + thrustLevel * CONFIG.ENERGY_MOTION_COST + sensorDrain) * dt,
+      );
+      this.consumeFoodFor(ant);
+      this.handleDangersFor(ant, dt);
+      if (ant.energy <= 0) deaths.push(ant);
+    }
+
+    this.handleEnergyWarnings();   // focused-ant warnings only — see method comment
+    this.updateMetrics(focusedSourceOutputs, motors, focusedTurnSigned, focusedSensorDrain);
+
+    // Kill after iteration so the loop is mutation-safe.
+    for (const ant of deaths) this.handleDeath(ant);
   }
 
-  wrapAntTrail() {
+  wrapAnt(ant) {
     let wrapped = false;
-    if (this.ant.x < 0 || this.ant.x > this.w) {
-      this.ant.x = wrapValue(this.ant.x, this.w);
+    if (ant.x < 0 || ant.x > this.w) {
+      ant.x = wrapValue(ant.x, this.w);
       wrapped = true;
     }
-    if (this.ant.y < 0 || this.ant.y > this.h) {
-      this.ant.y = wrapValue(this.ant.y, this.h);
+    if (ant.y < 0 || ant.y > this.h) {
+      ant.y = wrapValue(ant.y, this.h);
       wrapped = true;
     }
-    if (wrapped) this.ant.trail.length = 0;
+    if (wrapped) ant.trail.length = 0;
     return wrapped;
   }
 
-  updateTrail() {
-    const last = this.ant.trail[this.ant.trail.length - 1];
-    if (!last || Math.hypot(this.ant.x - last.x, this.ant.y - last.y) > 0.4) this.ant.trail.push({ x: this.ant.x, y: this.ant.y });
-    while (this.ant.trail.length > CONFIG.TRAIL_LENGTH) this.ant.trail.shift();
+  updateTrail(ant) {
+    const last = ant.trail[ant.trail.length - 1];
+    if (!last || Math.hypot(ant.x - last.x, ant.y - last.y) > 0.4) ant.trail.push({ x: ant.x, y: ant.y });
+    while (ant.trail.length > CONFIG.TRAIL_LENGTH) ant.trail.shift();
   }
 
-  consumeFood() {
+  consumeFoodFor(ant) {
     for (const food of this.foods) {
-      if (Math.hypot(food.x - this.ant.x, food.y - this.ant.y) > CONFIG.FOOD_EAT_RADIUS + food.r) continue;
-      const before = Math.round(this.ant.energy);
-      this.ant.energy = clamp(this.ant.energy + CONFIG.FOOD_ENERGY, 0, CONFIG.MAX_ENERGY);
+      if (Math.hypot(food.x - ant.x, food.y - ant.y) > CONFIG.FOOD_EAT_RADIUS + food.r) continue;
+      const before = Math.round(ant.energy);
+      ant.energy = clamp(ant.energy + CONFIG.FOOD_ENERGY, 0, CONFIG.MAX_ENERGY);
       this.foodEaten += 1;
-      this.log("food", `吃到食物 #${food.id}，能量 +${Math.round(this.ant.energy - before)} → ${Math.round(this.ant.energy)}`);
-      Object.assign(food, respawnPoint(this.w, this.h, CONFIG.FOOD_MARGIN, { x: this.ant.x, y: this.ant.y, radius: 76 }), { phase: randomBetween(0, TAU) });
+      // Per-ant attribution: include ant id when multiple ants exist so the
+      // log stays usable in colony scenarios.
+      const tag = this.ants.length > 1 ? `[ant ${ant.id}] ` : "";
+      this.log("food", `${tag}吃到食物 #${food.id}，能量 +${Math.round(ant.energy - before)} → ${Math.round(ant.energy)}`);
+      Object.assign(food, respawnPoint(this.w, this.h, CONFIG.FOOD_MARGIN, { x: ant.x, y: ant.y, radius: 76 }), { phase: randomBetween(0, TAU) });
     }
   }
 
-  handleDangers(dt) {
-    const dangerLevel = this.dangerField.sample(this.ant.x, this.ant.y);
+  handleDangersFor(ant, dt) {
+    const dangerLevel = this.dangerField.sample(ant.x, ant.y);
     if (dangerLevel > CONFIG.DANGER_THRESHOLD) {
       const damage = (dangerLevel - CONFIG.DANGER_THRESHOLD) * CONFIG.DANGER_DAMAGE_RATE * dt;
-      this.ant.energy = Math.max(0, this.ant.energy - damage);
+      ant.energy = Math.max(0, ant.energy - damage);
       this.lastDangerTime = this.alive;
-      if (!this._dangerLogged || this.alive - this._dangerLogTime > 2) {
-        this._dangerLogged = true;
-        this._dangerLogTime = this.alive;
-        this.log("danger", `进入危险区域，浓度 ${dangerLevel.toFixed(2)}，持续受损`);
+      // Throttled danger log — keyed by ant so per-ant entries don't
+      // suppress each other.
+      ant._dangerLogged = ant._dangerLogged ?? false;
+      ant._dangerLogTime = ant._dangerLogTime ?? -999;
+      if (!ant._dangerLogged || this.alive - ant._dangerLogTime > 2) {
+        ant._dangerLogged = true;
+        ant._dangerLogTime = this.alive;
+        const tag = this.ants.length > 1 ? `[ant ${ant.id}] ` : "";
+        this.log("danger", `${tag}进入危险区域，浓度 ${dangerLevel.toFixed(2)}，持续受损`);
       }
     } else {
-      this._dangerLogged = false;
+      ant._dangerLogged = false;
     }
   }
 
+  /**
+   * Low-energy warnings track the focused ant only — UI shows one HUD bar,
+   * and the warnings are about that bar's appearance. A multi-ant
+   * notification surface would be a separate feature.
+   */
   handleEnergyWarnings() {
-    if (!this.lowEnergy50Logged && this.ant.energy <= CONFIG.MAX_ENERGY * 0.5) {
+    const focus = this.focusedAnt;
+    if (!focus) return;
+    if (!this.lowEnergy50Logged && focus.energy <= CONFIG.MAX_ENERGY * 0.5) {
       this.lowEnergy50Logged = true;
-      this.log("energy", `能量首次低于 50%，当前 ${Math.round(this.ant.energy)}`);
+      this.log("energy", `能量首次低于 50%，当前 ${Math.round(focus.energy)}`);
     }
-    if (!this.lowEnergy25Logged && this.ant.energy <= CONFIG.MAX_ENERGY * 0.25) {
+    if (!this.lowEnergy25Logged && focus.energy <= CONFIG.MAX_ENERGY * 0.25) {
       this.lowEnergy25Logged = true;
-      this.log("energy", `能量首次低于 25%，当前 ${Math.round(this.ant.energy)}`);
+      this.log("energy", `能量首次低于 25%，当前 ${Math.round(focus.energy)}`);
     }
   }
 
   updateMetrics(sourceOutputs, motors, turnSigned, sensorDrain) {
+    const focus = this.focusedAnt;
     const maxSpeed = CONFIG.BASE_SPEED * this.bodyParams.speedScale;
+    const so = sourceOutputs ?? {};
     const displayOutputs = {
-      ...sourceOutputs,
-      energy: clamp(this.ant.energy / CONFIG.MAX_ENERGY, 0, 1),
-      damage: sourceOutputs.damage ?? 0,
+      ...so,
+      energy: focus ? clamp(focus.energy / CONFIG.MAX_ENERGY, 0, 1) : 0,
+      damage: so.damage ?? 0,
     };
     this.metrics = {
       sensorOutputs: displayOutputs,
@@ -601,19 +756,34 @@ export class World {
       gland_alpha:   motors.gland_alpha,
       gland_beta:    motors.gland_beta,
       mandible:      motors.mandible,
-      speed: clamp(this.ant.speed / (maxSpeed * 1.1), 0, 1),
-      energy: clamp(this.ant.energy / CONFIG.MAX_ENERGY, 0, 1),
+      speed: focus ? clamp(focus.speed / (maxSpeed * 1.1), 0, 1) : 0,
+      energy: focus ? clamp(focus.energy / CONFIG.MAX_ENERGY, 0, 1) : 0,
       turn: clamp(Math.abs(turnSigned) / (CONFIG.TURN_GAIN * this.bodyParams.turnScale * 1.1), 0, 1),
       turnSigned,
       sensorDrain
     };
   }
 
-  handleDeath() {
-    this.dead = true;
-    this.ant.speed = 0;
-    this.deathReason = this.alive - this.lastDangerTime < 1.2 ? "能量耗尽，最后阶段连续撞上危险。" : "能量耗尽，没有及时找到足够食物。";
-    this.log("death", `死亡原因：${this.deathReason} 存活 ${this.alive.toFixed(1)}s`);
+  /**
+   * Per-ant death: remove from ants[], log cause, and only flip the global
+   * `dead` flag (which halts the sim) once the colony is empty. Focus
+   * stays pointed at the dead ant's id so the HUD reports "no focus"
+   * rather than silently switching ants.
+   */
+  handleDeath(ant) {
+    if (!ant) return;
+    ant.speed = 0;
+    const recentDanger = this.alive - this.lastDangerTime < 1.2;
+    const reason = recentDanger
+      ? "能量耗尽，最后阶段连续撞上危险。"
+      : "能量耗尽，没有及时找到足够食物。";
+    const tag = this.ants.length > 1 ? `[ant ${ant.id}] ` : "";
+    this.log("death", `${tag}死亡原因：${reason} 存活 ${this.alive.toFixed(1)}s`);
+    this.killAnt(ant);
+    if (this.ants.length === 0) {
+      this.dead = true;
+      this.deathReason = reason;
+    }
   }
 
   /**
@@ -624,19 +794,27 @@ export class World {
    * the sim clock. behaviorLog is deliberately ephemeral.
    */
   serializeWorld() {
+    // v8 shape (one `ant` block) — preserved while the io/schema is still on
+    // version 8. Sub-step 1c bumps the envelope to v9 and switches this to
+    // an ants[] block. Today only the focused ant is captured because v8
+    // has no place to hold extras; non-focused ants would be silently
+    // dropped on save. World is single-ant in practice until 1d wires
+    // multi-ant runtime, so this matches observable behaviour.
+    const focus = this.focusedAnt;
+    const antBlock = focus ? {
+      x: focus.x,
+      y: focus.y,
+      angle: focus.angle,
+      energy: focus.energy,
+      trail: focus.trail.map((p) => ({ x: p.x, y: p.y })),
+      glandAlpha: { ...focus.glandAlpha },
+      glandBeta:  { ...focus.glandBeta  },
+    } : null;
     return {
       alive: this.alive ?? 0,
       generation: this.generation ?? 1,
       foodEaten: this.foodEaten ?? 0,
-      ant: {
-        x: this.ant.x,
-        y: this.ant.y,
-        angle: this.ant.angle,
-        energy: this.ant.energy,
-        trail: this.ant.trail.map((p) => ({ x: p.x, y: p.y })),
-        glandAlpha: { ...this.ant.glandAlpha },
-        glandBeta:  { ...this.ant.glandBeta  },
-      },
+      ant: antBlock,
       foods:   this.foods.map((f)   => ({ id: f.id, x: f.x, y: f.y, r: f.r, phase: f.phase })),
       dangers: this.dangers.map((d) => ({ id: d.id, x: d.x, y: d.y, r: d.r, phase: d.phase })),
       fields: {
@@ -673,24 +851,27 @@ export class World {
     if (Number.isFinite(data.foodEaten))  this.foodEaten  = data.foodEaten;
 
     if (data.ant && typeof data.ant === "object") {
-      const a = data.ant;
-      if (Number.isFinite(a.x))      this.ant.x      = a.x;
-      if (Number.isFinite(a.y))      this.ant.y      = a.y;
-      if (Number.isFinite(a.angle))  this.ant.angle  = a.angle;
-      if (Number.isFinite(a.energy)) this.ant.energy = a.energy;
-      if (Array.isArray(a.trail)) {
-        this.ant.trail = a.trail
-          .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
-          .map((p) => ({ x: p.x, y: p.y }));
-      }
-      if (a.glandAlpha) {
-        for (const k of ["current", "capacity", "recovery"]) {
-          if (Number.isFinite(a.glandAlpha[k])) this.ant.glandAlpha[k] = a.glandAlpha[k];
+      const target = this.focusedAnt;
+      if (target) {
+        const a = data.ant;
+        if (Number.isFinite(a.x))      target.x      = a.x;
+        if (Number.isFinite(a.y))      target.y      = a.y;
+        if (Number.isFinite(a.angle))  target.angle  = a.angle;
+        if (Number.isFinite(a.energy)) target.energy = a.energy;
+        if (Array.isArray(a.trail)) {
+          target.trail = a.trail
+            .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+            .map((p) => ({ x: p.x, y: p.y }));
         }
-      }
-      if (a.glandBeta) {
-        for (const k of ["current", "capacity", "recovery"]) {
-          if (Number.isFinite(a.glandBeta[k])) this.ant.glandBeta[k] = a.glandBeta[k];
+        if (a.glandAlpha) {
+          for (const k of ["current", "capacity", "recovery"]) {
+            if (Number.isFinite(a.glandAlpha[k])) target.glandAlpha[k] = a.glandAlpha[k];
+          }
+        }
+        if (a.glandBeta) {
+          for (const k of ["current", "capacity", "recovery"]) {
+            if (Number.isFinite(a.glandBeta[k])) target.glandBeta[k] = a.glandBeta[k];
+          }
         }
       }
     }
