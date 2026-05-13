@@ -16,6 +16,14 @@ import {
   readSavedEnvelope,
   writeSavedEnvelope,
 } from "./io/schema.js";
+import {
+  compileTopology,
+  createBatchState,
+  seedBatchFromGraph,
+  stepBatch,
+  writebackFromBatch,
+  readMotorOutputs,
+} from "./neural/batch.js";
 
 class App {
   constructor() {
@@ -40,6 +48,12 @@ class App {
     }
     this.connections = this.graph.toConnectionsObject();
     this.behavior = inferBehavior(this.connections, this.sensorEnabled, this.sensorDefs);
+    // Batched evaluator state. Lazily compiled on first use and rebuilt
+    // whenever the graph topology changes (handleGraphChange / resetCircuit
+    // / loadCircuit). The editor-preview path stays on computeSignals so
+    // sidebar tweaks don't force a recompile per keystroke.
+    this.topology = null;
+    this.batch = null;
     this.worldRenderer = new WorldRenderer(document.getElementById("world"), this.world);
     this.topbar = new Topbar(this.environmentState, {
       onPause: () => this.togglePause(),
@@ -114,6 +128,7 @@ class App {
     this.behavior = inferBehavior(this.connections, this.sensorEnabled, this.sensorDefs);
     this.topbar.renderBehavior(this.behavior);
     this.footer.renderBehavior(this.behavior);
+    this._invalidateBatch();   // sensor count / ids may have changed
     this.refreshMetricsSnapshot();
     this.saveCircuit();
   }
@@ -123,6 +138,83 @@ class App {
     const motorInputs = this.graph.getMotorOutputs(nodeSignals);
     const motorLevels = this.world.resolveMotorLevels(motorInputs);
     return { nodeSignals, edgeSignals, motorInputs, motorLevels };
+  }
+
+  /**
+   * (Re)compile the batched evaluator. Called lazily by _ensureBatch when
+   * the topology is missing or has been invalidated; safe to call directly
+   * after any graph mutation that should reflect immediately.
+   */
+  _rebuildBatch() {
+    this.topology = compileTopology(this.graph);
+    this.batch = createBatchState(this.topology, Math.max(1, this.world.ants.length));
+    // Seed batch state for each ant from the graph's current node state.
+    // For now all ants share the graph's authoring state — the only
+    // per-ant divergence comes from sensor inputs over subsequent ticks.
+    for (let a = 0; a < this.batch.A; a++) seedBatchFromGraph(this.topology, this.batch, this.graph, a);
+  }
+
+  _ensureBatch() {
+    if (!this.topology || !this.batch) {
+      this._rebuildBatch();
+      return;
+    }
+    // ants[] count may have changed (spawn / death) — resize the batch.
+    if (this.batch.A !== Math.max(1, this.world.ants.length)) {
+      this._rebuildBatch();
+    }
+  }
+
+  _invalidateBatch() {
+    this.topology = null;
+    this.batch = null;
+  }
+
+  /**
+   * Per-tick batched eval. Composes sensor inputs for each live ant,
+   * runs stepBatch, and reads back motor outputs. Returns the focused
+   * ant's circuit frame plus the per-ant motor inputs array.
+   */
+  _runBatchedTick(dt) {
+    this._ensureBatch();
+    const topo = this.topology;
+    const batch = this.batch;
+    const A = batch.A;
+    const ants = this.world.ants;
+    const sensorInputs = new Float32Array(A * topo.S);
+    const sourceOutputsByAnt = new Array(A);
+    for (let a = 0; a < A; a++) {
+      const ant = ants[a];
+      if (!ant) {
+        // Dead slot — keep alive mask down but still fill zero sensors.
+        batch.alive[a] = 0;
+        sourceOutputsByAnt[a] = null;
+        continue;
+      }
+      batch.alive[a] = 1;
+      const isFocused = ant.id === this.world.focusedAntId;
+      const so = this.world.composeSourceOutputs(ant, this.sensorEnabled, dt, isFocused);
+      sourceOutputsByAnt[a] = so;
+      for (let s = 0; s < topo.S; s++) {
+        const id = topo.sensorSourceIds[s];
+        const enabled = this.sensorEnabled[id];
+        // Body-internal channels are always on (matches sensorOutputForNode).
+        const active = enabled === undefined ? true : Boolean(enabled);
+        sensorInputs[a * topo.S + s] = active ? (so[id] ?? 0) : 0;
+      }
+    }
+    stepBatch(topo, batch, sensorInputs, { dt });
+    // Mirror the focused ant's state back into the graph so the editor /
+    // sidebar see live node activations. Non-focused ants live only in
+    // the batch.
+    const focusIdx = ants.findIndex((a) => a.id === this.world.focusedAntId);
+    if (focusIdx >= 0) writebackFromBatch(topo, batch, this.graph, focusIdx);
+
+    const motorInputsByAnt = new Array(A);
+    for (let a = 0; a < A; a++) {
+      motorInputsByAnt[a] = ants[a] ? readMotorOutputs(topo, batch, a) : null;
+    }
+    return { motorInputsByAnt, sourceOutputsByAnt, focusIdx };
   }
 
   refreshMetricsSnapshot() {
@@ -165,6 +257,7 @@ class App {
     this.topbar.renderBehavior(this.behavior);
     this.footer.renderBehavior(this.behavior);
     this.refreshMetricsSnapshot();
+    this._invalidateBatch();
     this.saveCircuit();
   }
 
@@ -206,6 +299,7 @@ class App {
     this.footer.renderBehavior(this.behavior);
     this.sidebar.editor.fitView();
     this.refreshMetricsSnapshot();
+    this._invalidateBatch();
     this.saveCircuit();
   }
 
@@ -214,6 +308,7 @@ class App {
     this.world.reset({ incrementGeneration: true });
     this.world.bodyParams = savedBody;
     this.graph.resetState();
+    this._invalidateBatch();
     this.refreshMetricsSnapshot();
     this.deathShown = false;
     this.accumulator = 0;
@@ -296,6 +391,7 @@ class App {
     this.topbar.renderBehavior(this.behavior);
     this.footer.renderBehavior(this.behavior);
     this.sidebar.editor.fitView();
+    this._invalidateBatch();
     this.refreshMetricsSnapshot();
     this.saveCircuit();
   }
@@ -307,11 +403,33 @@ class App {
     if (!this.paused && !this.world.dead) {
       this.accumulator += delta * this.speed;
       while (this.accumulator >= CONFIG.FIXED_DT) {
-        const sourceOutputs = this.world.composeSourceOutputs(this.sensorEnabled, CONFIG.FIXED_DT, true, this.sensorDefs, this.sourceOrder);
-        const evaluation = this.evaluateCircuit(sourceOutputs, true, CONFIG.FIXED_DT);
-        this.circuitFrame = { ...evaluation, sourceOutputs };
+        // Batched eval: composes per-ant sensor inputs, runs stepBatch,
+        // mirrors focused-ant state back into the graph for the sidebar.
+        const { motorInputsByAnt, sourceOutputsByAnt, focusIdx } =
+          this._runBatchedTick(CONFIG.FIXED_DT);
+
+        // Sidebar / metrics frame is focused-ant only — read motors and
+        // source outputs from the focused slot.
+        const focusMotors = focusIdx >= 0 ? motorInputsByAnt[focusIdx] : {};
+        const focusSources = focusIdx >= 0 ? sourceOutputsByAnt[focusIdx] : {};
+        const focusMotorLevels = this.world.resolveMotorLevels(focusMotors);
+        // edgeSignals / nodeSignals on the editor frame come from the
+        // writeback into the graph plus a fresh sidebar-side eval; the
+        // sidebar already reads graph.node.state, so we pass an empty
+        // signals map here. Keeping the field present keeps Sidebar's
+        // existing shape happy.
+        this.circuitFrame = {
+          nodeSignals: {},
+          edgeSignals: {},
+          motorInputs: focusMotors,
+          motorLevels: focusMotorLevels,
+          sourceOutputs: focusSources,
+        };
         this.sidebar.setEvaluation(this.circuitFrame);
-        this.world.step(CONFIG.FIXED_DT, evaluation.motorInputs, this.sensorEnabled, sourceOutputs);
+
+        // world.step accepts per-ant arrays — feed the batched motors /
+        // source outputs straight through so each ant gets its own.
+        this.world.step(CONFIG.FIXED_DT, motorInputsByAnt, this.sensorEnabled, sourceOutputsByAnt);
         this.accumulator -= CONFIG.FIXED_DT;
         if (this.world.dead) break;
       }

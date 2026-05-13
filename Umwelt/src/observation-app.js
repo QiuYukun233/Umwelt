@@ -25,6 +25,14 @@ import {
   readSavedEnvelope,
   writeSavedEnvelope,
 } from "./io/schema.js";
+import {
+  compileTopology,
+  createBatchState,
+  seedBatchFromGraph,
+  stepBatch,
+  writebackFromBatch,
+  readMotorOutputs,
+} from "./neural/batch.js";
 
 class ObservationApp {
   constructor() {
@@ -57,6 +65,11 @@ class ObservationApp {
     }
     this.connections = this.graph.toConnectionsObject();
     this.behavior = inferBehavior(this.connections, this.sensorEnabled, this.sensorDefs);
+
+    // Batched evaluator state — lazy, rebuilt on graph mutations / sensor
+    // config changes / reset. Editor preview keeps using computeSignals.
+    this.topology = null;
+    this.batch = null;
 
     // ── Observation UI ──
     this.obs = new Observation(document.getElementById("obs-root"), {
@@ -129,6 +142,49 @@ class ObservationApp {
     const motorInputs = this.graph.getMotorOutputs(nodeSignals);
     const motorLevels = this.world.resolveMotorLevels(motorInputs);
     return { nodeSignals, edgeSignals, motorInputs, motorLevels };
+  }
+
+  // Batched evaluator helpers — mirror main.js. See main.js comments for
+  // rationale; observation-app shares the same per-tick contract.
+  _rebuildBatch() {
+    this.topology = compileTopology(this.graph);
+    this.batch = createBatchState(this.topology, Math.max(1, this.world.ants.length));
+    for (let a = 0; a < this.batch.A; a++) seedBatchFromGraph(this.topology, this.batch, this.graph, a);
+  }
+  _ensureBatch() {
+    if (!this.topology || !this.batch) { this._rebuildBatch(); return; }
+    if (this.batch.A !== Math.max(1, this.world.ants.length)) this._rebuildBatch();
+  }
+  _invalidateBatch() { this.topology = null; this.batch = null; }
+
+  _runBatchedTick(dt) {
+    this._ensureBatch();
+    const topo = this.topology;
+    const batch = this.batch;
+    const A = batch.A;
+    const ants = this.world.ants;
+    const sensorInputs = new Float32Array(A * topo.S);
+    const sourceOutputsByAnt = new Array(A);
+    for (let a = 0; a < A; a++) {
+      const ant = ants[a];
+      if (!ant) { batch.alive[a] = 0; sourceOutputsByAnt[a] = null; continue; }
+      batch.alive[a] = 1;
+      const isFocused = ant.id === this.world.focusedAntId;
+      const so = this.world.composeSourceOutputs(ant, this.sensorEnabled, dt, isFocused);
+      sourceOutputsByAnt[a] = so;
+      for (let s = 0; s < topo.S; s++) {
+        const id = topo.sensorSourceIds[s];
+        const enabled = this.sensorEnabled[id];
+        const active = enabled === undefined ? true : Boolean(enabled);
+        sensorInputs[a * topo.S + s] = active ? (so[id] ?? 0) : 0;
+      }
+    }
+    stepBatch(topo, batch, sensorInputs, { dt });
+    const focusIdx = ants.findIndex((a) => a.id === this.world.focusedAntId);
+    if (focusIdx >= 0) writebackFromBatch(topo, batch, this.graph, focusIdx);
+    const motorInputsByAnt = new Array(A);
+    for (let a = 0; a < A; a++) motorInputsByAnt[a] = ants[a] ? readMotorOutputs(topo, batch, a) : null;
+    return { motorInputsByAnt, sourceOutputsByAnt, focusIdx };
   }
 
   refreshMetrics() {
@@ -215,6 +271,7 @@ class ObservationApp {
   _handleGraphChange() {
     this.connections = this.graph.toConnectionsObject();
     this.behavior = inferBehavior(this.connections, this.sensorEnabled, this.sensorDefs);
+    this._invalidateBatch();
     this.refreshMetrics();
     this.saveCircuit();
   }
@@ -310,14 +367,24 @@ class ObservationApp {
       this._fpsSamples = 0;
     }
 
-    // Physics
+    // Physics — batched eval. Focused-ant circuit frame drives the editor
+    // overlay; non-focused ants live only in the batch.
     if (!this.paused && !this.world.dead) {
       this.accumulator += delta * this.speed;
       while (this.accumulator >= CONFIG.FIXED_DT) {
-        const sourceOutputs = this.world.composeSourceOutputs(this.sensorEnabled, CONFIG.FIXED_DT, true, this.sensorDefs, this.sourceOrder);
-        const evaluation = this.evaluateCircuit(sourceOutputs, true, CONFIG.FIXED_DT);
-        this.circuitFrame = { ...evaluation, sourceOutputs };
-        this.world.step(CONFIG.FIXED_DT, evaluation.motorInputs, this.sensorEnabled, sourceOutputs);
+        const { motorInputsByAnt, sourceOutputsByAnt, focusIdx } =
+          this._runBatchedTick(CONFIG.FIXED_DT);
+        const focusMotors = focusIdx >= 0 ? motorInputsByAnt[focusIdx] : {};
+        const focusSources = focusIdx >= 0 ? sourceOutputsByAnt[focusIdx] : {};
+        const focusMotorLevels = this.world.resolveMotorLevels(focusMotors);
+        this.circuitFrame = {
+          nodeSignals: {},
+          edgeSignals: {},
+          motorInputs: focusMotors,
+          motorLevels: focusMotorLevels,
+          sourceOutputs: focusSources,
+        };
+        this.world.step(CONFIG.FIXED_DT, motorInputsByAnt, this.sensorEnabled, sourceOutputsByAnt);
         this.accumulator -= CONFIG.FIXED_DT;
         this._tickCount++;
         if (this.world.dead) break;

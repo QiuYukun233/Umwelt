@@ -589,18 +589,22 @@ export class World {
   /**
    * Advance the simulation one tick.
    *
-   * `motorInputs` is currently a single object applied to every ant — this
-   * is the A=1 transition shape. Sub-step 1d widens the contract to
-   * batched motors (one entry per ant from stepBatch).
+   * `motorInputs` accepts two shapes:
+   *   - single object → applied to every ant (A=1 / legacy shape).
+   *   - array         → motorInputs[i] applied to ants[i] (matched by
+   *                     index, not id; caller is responsible for keeping
+   *                     this in sync with ants[]).
    *
-   * `sourceOutputsOverride`, when supplied, is applied to the *focused*
-   * ant only; replay scenarios are single-ant.
+   * `sourceOutputsOverride` likewise can be a single object (applied to
+   * the focused ant only) or an array (per-ant). Per-ant scope is what
+   * stepBatch callers pass; replays / metrics paths still use single.
    */
   step(dt, motorInputs, sensorEnabled, sourceOutputsOverride = null) {
     if (this.dead) return;
     this.alive += dt;
 
-    const motors = this.resolveMotorLevels(motorInputs);
+    const motorsIsArray = Array.isArray(motorInputs);
+    const overrideIsArray = Array.isArray(sourceOutputsOverride);
 
     // Environmental emissions — once per tick, ant count independent.
     for (const food of this.foods)
@@ -608,8 +612,12 @@ export class World {
     for (const danger of this.dangers)
       this.fields.chem_D.inject(danger.x, danger.y, CONFIG.DANGER_EMIT_RATE * dt);
 
-    // Per-ant gland secretions: each ant draws from its own reservoirs.
-    for (const ant of this.ants) {
+    // Per-ant gland secretions: each ant draws from its own reservoirs and
+    // uses its own motor levels.
+    for (let i = 0; i < this.ants.length; i++) {
+      const ant = this.ants[i];
+      const m = motorsIsArray ? (motorInputs[i] ?? {}) : motorInputs;
+      const motors = this.resolveMotorLevels(m);
       this._updateGland(ant.glandAlpha, motors.gland_alpha, CONFIG.GLAND_ALPHA_EMIT_RATE, this.fields.chem_B, ant.x, ant.y, dt);
       this._updateGland(ant.glandBeta,  motors.gland_beta,  CONFIG.GLAND_BETA_EMIT_RATE,  this.fields.chem_C, ant.x, ant.y, dt);
     }
@@ -623,16 +631,21 @@ export class World {
     const sensorOrder = this._sensorOrder ?? SENSOR_ORDER;
     const focusedId = this.focusedAntId;
     let focusedSourceOutputs = null;
+    let focusedMotors = null;
     let focusedTurnSigned = 0;
     let focusedSensorDrain = 0;
     const deaths = [];
 
     // Per-ant: sense → body step → energy → food → danger.
-    for (const ant of this.ants) {
+    for (let i = 0; i < this.ants.length; i++) {
+      const ant = this.ants[i];
       const isFocused = ant.id === focusedId;
-      const so = isFocused && sourceOutputsOverride
-        ? sourceOutputsOverride
-        : this.composeSourceOutputs(ant, sensorEnabled, dt, isFocused);
+      const m = motorsIsArray ? (motorInputs[i] ?? {}) : motorInputs;
+      const motors = this.resolveMotorLevels(m);
+      const override = overrideIsArray
+        ? sourceOutputsOverride[i]
+        : (isFocused ? sourceOutputsOverride : null);
+      const so = override ?? this.composeSourceOutputs(ant, sensorEnabled, dt, isFocused);
       const sensorDrain = sensorOrder.reduce(
         (sum, id) => sum + (sensorEnabled[id] ? Math.abs(so[id] ?? 0) : 0),
         0,
@@ -641,6 +654,7 @@ export class World {
       if (isFocused) {
         this.turnRate = turnRate;
         focusedSourceOutputs = so;
+        focusedMotors = motors;
         focusedTurnSigned = turnSigned;
         focusedSensorDrain = sensorDrain;
       }
@@ -655,10 +669,12 @@ export class World {
       if (ant.energy <= 0) deaths.push(ant);
     }
 
-    this.handleEnergyWarnings();   // focused-ant warnings only — see method comment
-    this.updateMetrics(focusedSourceOutputs, motors, focusedTurnSigned, focusedSensorDrain);
+    this.handleEnergyWarnings();
+    // Metrics reflect the focused ant; fall back to zeroed motors when no
+    // ant is focused (e.g. just after a focused-ant death).
+    const metricsMotors = focusedMotors ?? this.resolveMotorLevels({});
+    this.updateMetrics(focusedSourceOutputs, metricsMotors, focusedTurnSigned, focusedSensorDrain);
 
-    // Kill after iteration so the loop is mutation-safe.
     for (const ant of deaths) this.handleDeath(ant);
   }
 
