@@ -1,14 +1,15 @@
 /**
- * Save/load envelope for the Umwelt circuit (schema v8).
+ * Save/load envelope for the Umwelt circuit (schema v9).
  *
  * Outer shape:
  *   {
- *     version:       8,
+ *     version:       9,
  *     graph:         string,   // NeuralGraph.serialize() output
  *     sensorEnabled: Record<sourceId, boolean>,
  *     bodyParams:    { turnScale, speedScale },
  *     sensorConfig:  SensorConfig.toJSON(),
- *     world:         WorldBlock | null   // v8+; v6/v7 payloads get null on migrate
+ *     world:         WorldBlockV9 | null,   // v8+; v6/v7 payloads get null on migrate
+ *     map:           MapBlock | null        // v9+; reserved for the map editor (step 2)
  *   }
  *
  * See migrations.js for the upgrade chain and io/fields.js for the chem-field codec.
@@ -42,6 +43,10 @@ export function serializeApp(app) {
     bodyParams: { ...app.world.bodyParams },
     sensorConfig: app.sensorConfig.toJSON(),
     world: app.world.serializeWorld(),
+    // Map block surfaces in v9 but stays null until the map editor (step 2)
+    // emits authored maps. Apps that have no map context simply omit; we
+    // still write the field for forward-compat with editor saves.
+    map: app.map ?? null,
   };
 }
 

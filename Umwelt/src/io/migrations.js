@@ -12,13 +12,17 @@
  *   v8  — save now carries a top-level `world` block (ant pose, foods,
  *         dangers, chem field state). Old payloads get world = null so the
  *         loader knows to leave the default World state alone.
+ *   v9  — multi-ant: the world block carries `ants: [...]` instead of a
+ *         single `ant: {...}`, plus `focusedAntId` and `nextAntId`. The
+ *         envelope grows an optional top-level `map` block (null in v9
+ *         until the map editor in step 2 starts emitting maps).
  *
  * MIGRATABLE_STORAGE_VERSION is the oldest source version migrate() will
  * accept. Payloads below that are rejected; localStorage callers wipe and
  * fall through to a fresh default circuit, matching the pre-Step-5 shape.
  */
 
-export const CURRENT_STORAGE_VERSION = 8;
+export const CURRENT_STORAGE_VERSION = 9;
 export const MIGRATABLE_STORAGE_VERSION = 6;
 
 function v6_to_v7(data) {
@@ -38,9 +42,40 @@ function v7_to_v8(data) {
   return data;
 }
 
+function v8_to_v9(data) {
+  // v9 turns the single-ant `world.ant` into `world.ants[]` and adds the
+  // id allocator state. Envelope-level `map` block is introduced as null;
+  // the editor (step 2) starts emitting non-null maps.
+  if (data.world && typeof data.world === "object") {
+    const w = data.world;
+    if (w.ant && typeof w.ant === "object") {
+      // Preserve all fields; stamp id=0 to match the pre-existing
+      // single-ant assumption. focusedAntId points at it.
+      const ant = { id: 0, ...w.ant };
+      w.ants = [ant];
+      delete w.ant;
+      w.focusedAntId = 0;
+      w.nextAntId = 1;
+    } else {
+      // World block exists but no ant — leave empty, but seed allocator
+      // state so a fresh spawn after load gets id 0.
+      w.ants = Array.isArray(w.ants) ? w.ants : [];
+      w.focusedAntId = Number.isInteger(w.focusedAntId) ? w.focusedAntId : 0;
+      w.nextAntId = Number.isInteger(w.nextAntId) ? w.nextAntId : 0;
+    }
+  }
+  // Top-level map block — null = "no map authored". applyEnvelope falls
+  // back to the freshly-constructed World's hardcoded environment, matching
+  // v7 → v8's `world = null` semantics.
+  data.map = data.map ?? null;
+  data.version = 9;
+  return data;
+}
+
 export const MIGRATIONS = {
   6: v6_to_v7,
   7: v7_to_v8,
+  8: v8_to_v9,
 };
 
 /**

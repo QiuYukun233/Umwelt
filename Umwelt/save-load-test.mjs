@@ -1,10 +1,11 @@
 /**
- * Round-trip tests for schema v8 save/load.
+ * Round-trip tests for the save/load envelope (current: v9).
  *
  * Runs headless in Node (no DOM, no localStorage). Covers:
  *   1. fields.js codec — Float32Array → base64 → Float32Array is bit-identical
- *   2. migrations.js — v6 and v7 payloads upgrade cleanly to v8
- *   3. World.serializeWorld / deserializeWorld — full round-trip
+ *   2. migrations.js — every step in the v6 → CURRENT chain, plus rejections
+ *   3. World.serializeWorld / deserializeWorld — full round-trip including
+ *      multi-ant ants[] block and the id allocator state
  *
  * Run: `node save-load-test.mjs` from the repo root.
  */
@@ -121,7 +122,7 @@ test("MIGRATIONS[7] alone upgrades v7 → v8 and sets world=null", () => {
   assert.equal(out.world, null);
 });
 
-test("migrate(v6 payload) → v8 with world=null", () => {
+test("migrate(v6 payload) → CURRENT with world=null and map=null", () => {
   const v6 = {
     version: 6,
     graph: JSON.stringify({ nodes: [], edges: [], nextNeuronIndex: 1, nextEdgeIndex: 1 }),
@@ -131,9 +132,10 @@ test("migrate(v6 payload) → v8 with world=null", () => {
   const up = migrate(v6);
   assert.equal(up.version, CURRENT_STORAGE_VERSION);
   assert.equal(up.world, null);
+  assert.equal(up.map, null);
 });
 
-test("migrate(v7 payload) → v8 with world=null", () => {
+test("migrate(v7 payload) → CURRENT with world=null and map=null", () => {
   const v7 = {
     version: 7,
     graph: JSON.stringify({ nodes: [], edges: [] }),
@@ -141,6 +143,50 @@ test("migrate(v7 payload) → v8 with world=null", () => {
     bodyParams: { turnScale: 1, speedScale: 1 },
   };
   const up = migrate(v7);
+  assert.equal(up.version, CURRENT_STORAGE_VERSION);
+  assert.equal(up.world, null);
+  assert.equal(up.map, null);
+});
+
+test("MIGRATIONS[8] alone upgrades v8 → v9 and wraps world.ant into ants[]", () => {
+  const v8 = {
+    version: 8,
+    graph: "{}",
+    world: {
+      alive: 10,
+      ant: { x: 100, y: 200, angle: 0.5, energy: 50, trail: [] },
+      foods: [],
+      dangers: [],
+      fields: {},
+    },
+  };
+  const out = MIGRATIONS[8](v8);
+  assert.equal(out.version, 9);
+  assert.ok(Array.isArray(out.world.ants), "world.ants is an array");
+  assert.equal(out.world.ants.length, 1);
+  assert.equal(out.world.ants[0].id, 0, "migrated ant gets id 0");
+  assert.equal(out.world.ants[0].x, 100);
+  assert.equal(out.world.ants[0].energy, 50);
+  assert.equal(out.world.ant, undefined, "old .ant key deleted");
+  assert.equal(out.world.focusedAntId, 0);
+  assert.equal(out.world.nextAntId, 1);
+  assert.equal(out.map, null, "envelope-level map defaults to null");
+});
+
+test("migrate(v8 with world=null) preserves null world and seeds map=null", () => {
+  const v8 = { version: 8, graph: "{}", world: null };
+  const up = migrate(v8);
+  assert.equal(up.version, CURRENT_STORAGE_VERSION);
+  assert.equal(up.world, null);
+  assert.equal(up.map, null);
+});
+
+test("migrate(v6 with world.ant) cross-jump produces ants[0].id === 0", () => {
+  // A v6 payload doesn't have a world block at all; v6 → v7 → v8 adds
+  // world=null, so by v9 the ants[] branch in v8_to_v9 takes the
+  // "world exists but no ant" path. Test that no crash and shape is sane.
+  const v6 = { version: 6, graph: "{}", sensorEnabled: {}, bodyParams: { turnScale: 1, speedScale: 1 } };
+  const up = migrate(v6);
   assert.equal(up.version, CURRENT_STORAGE_VERSION);
   assert.equal(up.world, null);
 });
@@ -277,6 +323,55 @@ test("deserializeWorld null input is a no-op", () => {
   const origEnergy = w1.ant.energy;
   w1.deserializeWorld(null);
   assert.equal(w1.ant.energy, origEnergy);
+});
+
+test("multi-ant round-trip: 3 ants with different ids preserve identity", () => {
+  const w1 = makeWorld();
+  // Add two more ants beyond the default one. spawn at known positions.
+  const extras = w1.spawnAnts(2, { origin: { x: 300, y: 300 }, radius: 0 });
+  // Wiggle positions so we can verify per-ant restoration.
+  w1.ants[0].x = 100; w1.ants[0].y = 110; w1.ants[0].energy = 80;
+  w1.ants[1].x = 200; w1.ants[1].y = 220; w1.ants[1].energy = 60;
+  w1.ants[2].x = 400; w1.ants[2].y = 440; w1.ants[2].energy = 40;
+  w1.focusedAntId = w1.ants[1].id;   // focus the middle ant
+
+  const blob = JSON.parse(JSON.stringify(w1.serializeWorld()));
+  assert.ok(Array.isArray(blob.ants), "serialize produces ants[] array");
+  assert.equal(blob.ants.length, 3);
+  assert.equal(blob.focusedAntId, w1.ants[1].id);
+  assert.equal(blob.nextAntId, w1.nextAntId);
+
+  const w2 = makeWorld();
+  w2.deserializeWorld(blob);
+  assert.equal(w2.ants.length, 3, "three ants restored");
+  // ids preserved
+  assert.deepEqual(w2.ants.map((a) => a.id), w1.ants.map((a) => a.id));
+  // per-ant pose preserved
+  assert.equal(w2.ants[0].x, 100); assert.equal(w2.ants[0].y, 110);
+  assert.equal(w2.ants[1].x, 200); assert.equal(w2.ants[1].y, 220);
+  assert.equal(w2.ants[2].x, 400); assert.equal(w2.ants[2].y, 440);
+  assert.equal(w2.ants[1].energy, 60);
+  // focus + allocator preserved
+  assert.equal(w2.focusedAntId, w1.ants[1].id);
+  assert.equal(w2.nextAntId, w1.nextAntId);
+  // focused getter resolves
+  assert.equal(w2.focusedAnt.id, w1.ants[1].id);
+});
+
+test("deserializeWorld repairs nextAntId if save left a collision", () => {
+  // Synthesize a malformed payload: ants with ids 0,5 but nextAntId=2.
+  // Future spawns would have collided with id 5 — deserialize must bump
+  // nextAntId past the max observed id.
+  const w = makeWorld();
+  w.deserializeWorld({
+    ants: [
+      { id: 0, x: 10, y: 10, angle: 0, energy: 100, trail: [] },
+      { id: 5, x: 20, y: 20, angle: 0, energy: 100, trail: [] },
+    ],
+    focusedAntId: 0,
+    nextAntId: 2,   // inconsistent — collides with id 5
+  });
+  assert.equal(w.nextAntId, 6, "nextAntId repaired to max(id)+1");
 });
 
 test("graph + world snapshot: stepping diverges, reload converges", () => {

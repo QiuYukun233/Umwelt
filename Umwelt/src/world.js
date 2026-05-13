@@ -793,28 +793,29 @@ export class World {
    * items (foods, dangers), chem fields (base64-encoded raw bytes), and
    * the sim clock. behaviorLog is deliberately ephemeral.
    */
+  /**
+   * Serialize world state (schema v9).
+   *
+   * v9 differences from v8: `ant: {...}` becomes `ants: [{id, ...}, ...]`,
+   * plus `focusedAntId` and `nextAntId` to round-trip the id allocator.
+   */
   serializeWorld() {
-    // v8 shape (one `ant` block) — preserved while the io/schema is still on
-    // version 8. Sub-step 1c bumps the envelope to v9 and switches this to
-    // an ants[] block. Today only the focused ant is captured because v8
-    // has no place to hold extras; non-focused ants would be silently
-    // dropped on save. World is single-ant in practice until 1d wires
-    // multi-ant runtime, so this matches observable behaviour.
-    const focus = this.focusedAnt;
-    const antBlock = focus ? {
-      x: focus.x,
-      y: focus.y,
-      angle: focus.angle,
-      energy: focus.energy,
-      trail: focus.trail.map((p) => ({ x: p.x, y: p.y })),
-      glandAlpha: { ...focus.glandAlpha },
-      glandBeta:  { ...focus.glandBeta  },
-    } : null;
     return {
       alive: this.alive ?? 0,
       generation: this.generation ?? 1,
       foodEaten: this.foodEaten ?? 0,
-      ant: antBlock,
+      ants: this.ants.map((a) => ({
+        id: a.id,
+        x: a.x,
+        y: a.y,
+        angle: a.angle,
+        energy: a.energy,
+        trail: a.trail.map((p) => ({ x: p.x, y: p.y })),
+        glandAlpha: { ...a.glandAlpha },
+        glandBeta:  { ...a.glandBeta  },
+      })),
+      focusedAntId: this.focusedAntId,
+      nextAntId: this.nextAntId,
       foods:   this.foods.map((f)   => ({ id: f.id, x: f.x, y: f.y, r: f.r, phase: f.phase })),
       dangers: this.dangers.map((d) => ({ id: d.id, x: d.x, y: d.y, r: d.r, phase: d.phase })),
       fields: {
@@ -850,30 +851,42 @@ export class World {
     if (Number.isFinite(data.generation)) this.generation = data.generation;
     if (Number.isFinite(data.foodEaten))  this.foodEaten  = data.foodEaten;
 
-    if (data.ant && typeof data.ant === "object") {
-      const target = this.focusedAnt;
-      if (target) {
-        const a = data.ant;
-        if (Number.isFinite(a.x))      target.x      = a.x;
-        if (Number.isFinite(a.y))      target.y      = a.y;
-        if (Number.isFinite(a.angle))  target.angle  = a.angle;
-        if (Number.isFinite(a.energy)) target.energy = a.energy;
-        if (Array.isArray(a.trail)) {
-          target.trail = a.trail
+    if (Array.isArray(data.ants)) {
+      // Rebuild ants[] from the save. Each entry becomes a fresh AntBody
+      // so trail / gland references are owned by this World instance;
+      // ids are preserved so focusedAntId still points where the save
+      // expects.
+      this.ants = data.ants.map((a, i) => {
+        const x = Number.isFinite(a?.x) ? a.x : this.w * 0.5;
+        const y = Number.isFinite(a?.y) ? a.y : this.h * 0.5;
+        const angle = Number.isFinite(a?.angle) ? a.angle : -Math.PI / 2;
+        const body = new AntBody(x, y, angle);
+        body.id = Number.isInteger(a?.id) ? a.id : i;
+        if (Number.isFinite(a?.energy)) body.energy = a.energy;
+        if (Array.isArray(a?.trail)) {
+          body.trail = a.trail
             .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
             .map((p) => ({ x: p.x, y: p.y }));
         }
-        if (a.glandAlpha) {
+        if (a?.glandAlpha) {
           for (const k of ["current", "capacity", "recovery"]) {
-            if (Number.isFinite(a.glandAlpha[k])) target.glandAlpha[k] = a.glandAlpha[k];
+            if (Number.isFinite(a.glandAlpha[k])) body.glandAlpha[k] = a.glandAlpha[k];
           }
         }
-        if (a.glandBeta) {
+        if (a?.glandBeta) {
           for (const k of ["current", "capacity", "recovery"]) {
-            if (Number.isFinite(a.glandBeta[k])) target.glandBeta[k] = a.glandBeta[k];
+            if (Number.isFinite(a.glandBeta[k])) body.glandBeta[k] = a.glandBeta[k];
           }
         }
-      }
+        return body;
+      });
+    }
+    if (Number.isInteger(data.focusedAntId)) this.focusedAntId = data.focusedAntId;
+    if (Number.isInteger(data.nextAntId)) {
+      // Repair: a save with an inconsistent allocator (nextAntId <= max id
+      // in ants[]) would cause future spawns to collide with restored ids.
+      const maxId = this.ants.reduce((m, a) => Math.max(m, a.id), -1);
+      this.nextAntId = Math.max(data.nextAntId, maxId + 1);
     }
 
     if (Array.isArray(data.foods)) {
