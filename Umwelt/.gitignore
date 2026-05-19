@@ -4,3 +4,4 @@ dist/
 .env
 .claude/*
 !.claude/settings.json
+.superpowers/
