@@ -40,11 +40,22 @@
 - 设计 spec 里的"开放问题"清单(spec 第 8 节)在 writing-plans 阶段会被进一步收敛。
 
 **下一步**
-- 用户 review 完 spec → commit spec + .gitignore 改动。
-- 处理 05-15 那笔悬挂的 UI 合并改动(浏览器实测后 commit,或暂存)。
-- 进 writing-plans 阶段。
-- 决定 Bevy 项目和现有 HTML 项目的代码组织(spec 第 8 节开放问题之一):
-  同一 repo 子目录?还是分仓?Rust workspace 怎么切?
+- 进 writing-plans 阶段,把 spec 第 6 节 MVP 作用域展开成实现计划:
+  - Bevy 项目脚手架(spec 第 8 节开放问题:同一 repo 子目录?分仓?Rust workspace 怎么切?)
+  - 化学场仿真器接口(Stage 1 静态 / Stage 2 动态共用一套)
+  - 第一关 `chemotaxis-l1` 的代码层结构
+  - HTML 侧 `edge.delay_ms` 改动顺序(NeuralGraph 边结构 + evaluator 环形缓冲 +
+    schema v9 → v10 + 主世界"装载模块"入口)
+- 收工前把 05-15 那笔挂着的 UI 合并 commit 了(fc2707d) —— 用户当天就实测过没问题,
+  之前误以为没测。
+
+**收工状态**
+- `2377608` 今天的 brainstorming 产出:spec + worklog + .gitignore
+- `fc2707d` 05-15 UI 合并 bundle(index 并入 observation,删 main.js + 4 个 ui/*,
+  style.css 161→109)
+- 工作区干净
+- 明天从 writing-plans 阶段开始,先读 `docs/superpowers/specs/2026-05-20-bevy-workshop-design.md`,
+  特别是第 6 节(MVP 作用域)和第 8 节(开放问题)。
 
 ---
 
