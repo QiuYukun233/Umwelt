@@ -14,11 +14,11 @@
  *
  * See migrations.js for the upgrade chain and io/fields.js for the chem-field codec.
  *
- * The two entry points (main.js and observation-app.js) differ in how a
- * changed sensor config gets installed (direct vs. _installSensorConfig),
- * so applyEnvelope takes an onSensorConfig callback rather than embedding
- * either path. Everything else (graph deserialize, sensor-enabled map,
- * body params, world block restore) is identical and lives here.
+ * applyEnvelope takes an onSensorConfig callback rather than embedding the
+ * install path, so callers control how a changed sensor config is wired
+ * back into their sidebar/editor references (observation-app uses
+ * _installSensorConfig). Everything else (graph deserialize, sensor-enabled
+ * map, body params, world block restore) is identical and lives here.
  */
 
 import { SensorConfig } from "../sensor-config.js";
@@ -54,9 +54,8 @@ export function serializeApp(app) {
  * Apply an already-migrated envelope to an app.
  *
  * `onSensorConfig(cfg)` is called if the envelope includes a sensor config;
- * callers supply either the direct-install path (main.js constructor load)
- * or _installSensorConfig (main.js import / observation-app import) to
- * keep sidebar/editor references in sync.
+ * the caller supplies an install path (observation-app uses
+ * _installSensorConfig) to keep sidebar/editor references in sync.
  *
  * Assumes `data.version === CURRENT_STORAGE_VERSION`. Callers that read
  * raw JSON must go through `migrate()` first.

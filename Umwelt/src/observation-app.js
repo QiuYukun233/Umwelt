@@ -1,9 +1,9 @@
 /**
- * Observation App — boots the game inside the new observation UI.
+ * Observation App — the app entry point. Boots the game inside the
+ * observation UI (the diegetic research-drone workstation).
  *
- * This is a parallel entry point to main.js. It reuses the same
- * World, NeuralGraph, WorldRenderer, and circuit logic, but renders
- * into the Observation artboard instead of the old grid layout.
+ * Wires together World, NeuralGraph, WorldRenderer, and circuit logic,
+ * rendering into the Observation artboard. Loaded by index.html.
  */
 // style.css first — provides structural CSS for the shared editor overlay
 // and utility classes (.btn, #editor-*, #body-editor-*). observation.css
@@ -144,8 +144,8 @@ class ObservationApp {
     return { nodeSignals, edgeSignals, motorInputs, motorLevels };
   }
 
-  // Batched evaluator helpers — mirror main.js. See main.js comments for
-  // rationale; observation-app shares the same per-tick contract.
+  // Batched evaluator helpers — lazy compile of the NeuralGraph into flat
+  // TypedArrays, invalidated on graph mutation. See src/neural/batch.js.
   _rebuildBatch() {
     this.topology = compileTopology(this.graph);
     this.batch = createBatchState(this.topology, Math.max(1, this.world.ants.length));
