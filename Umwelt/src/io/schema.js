@@ -3,7 +3,7 @@
  *
  * Outer shape:
  *   {
- *     version:       9,
+ *     version:       10,
  *     graph:         string,   // NeuralGraph.serialize() output
  *     sensorEnabled: Record<sourceId, boolean>,
  *     bodyParams:    { turnScale, speedScale },
