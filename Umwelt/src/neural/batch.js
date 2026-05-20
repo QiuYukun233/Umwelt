@@ -8,8 +8,10 @@
 // touches all N nodes of one ant before advancing to the next, so cache
 // lines stay warm across the eval-order walk for that ant.
 //
-// Math must stay bit-equivalent to NeuralGraph.computeSignals — see the
-// parity test in batch-parity-test.mjs.
+// Math must stay bit-equivalent to NeuralGraph.computeSignals for graphs
+// with no edge delays — see the parity test in batch-parity-test.mjs.
+// edge.delay_ms is honoured here but not in computeSignals; a delayed
+// graph is intentionally outside the parity contract (see delay-test.mjs).
 
 import { LEARNING_RATE, WEIGHT_DECAY_RATE } from "./constants.js";
 
@@ -79,7 +81,7 @@ function nodeOutputForType(typeCode, state, adapt) {
 // Walks the graph once. Stable indexing: sensors first (in iteration
 // order of graph.nodes), then non-sensors. Eval order = non-sensors
 // sorted by (x, then y), matching computeSignals.
-export function compileTopology(graph) {
+export function compileTopology(graph, refDtMs = 1000 / 60) {
   const allNodes = [...graph.nodes.values()];
   const sensors = allNodes.filter((n) => (n.neuronType ?? n.type) === "sensor_on");
   const nonSensors = allNodes.filter((n) => (n.neuronType ?? n.type) !== "sensor_on");
@@ -207,6 +209,18 @@ export function compileTopology(graph) {
     }
   }
 
+  // Per-edge conduction delay, rounded to whole ticks at the fixed step.
+  // ringSize covers the longest delay so the history buffer never aliases.
+  const edgeDelayTicks = new Int32Array(E);
+  let maxDelayTicks = 0;
+  for (let e = 0; e < E; e++) {
+    const ms = Number.isFinite(allEdges[e].delay_ms) ? Math.max(0, allEdges[e].delay_ms) : 0;
+    const ticks = Math.round(ms / refDtMs);
+    edgeDelayTicks[e] = ticks;
+    if (ticks > maxDelayTicks) maxDelayTicks = ticks;
+  }
+  const ringSize = maxDelayTicks + 1;
+
   // CSR-like incoming-edge index: for each node i, edges with edgeTo===i
   // live in edgeIncomingList[edgeIncomingStart[i] .. edgeIncomingStart[i+1]).
   const counts = new Int32Array(N);
@@ -230,14 +244,14 @@ export function compileTopology(graph) {
     evalNodeIndices,
     motorNodeIndices, motorSourceIds,
     edgeFrom, edgeTo, edgeWeight, edgeKind, edgePlastic, edgeModSrc,
-    edgeInitW,
+    edgeInitW, edgeDelayTicks, ringSize,
     edgeIncomingStart, edgeIncomingList,
   };
 }
 
 // ── createBatchState ───────────────────────────────────────────────────
 export function createBatchState(topo, A) {
-  const { N, E, initState } = topo;
+  const { N, E, initState, ringSize } = topo;
   const state = new Float32Array(A * N);
   // Initialize each ant's state to the per-node defaults (modulator
   // baseline, others zero).
@@ -259,6 +273,11 @@ export function createBatchState(topo, A) {
     output: new Float32Array(A * N),
     prevOutput: new Float32Array(A * N),
     plasticW,
+    // Delay ring buffer: outputHistory[a*N*ringSize + i*ringSize + slot]
+    // holds node i of ant a, written once per tick at slot = tick % ringSize.
+    outputHistory: new Float32Array(A * N * ringSize),
+    ringSize,
+    tick: 0,
   };
 }
 
@@ -318,11 +337,12 @@ export function stepBatch(topo, batch, sensorInputs, options = {}) {
     sensorNodeIndices,
     evalNodeIndices,
     edgeFrom, edgeWeight, edgeKind, edgePlastic, edgeModSrc,
+    edgeDelayTicks, ringSize,
     edgeIncomingStart, edgeIncomingList,
   } = topo;
   const A = batch.A;
   const alive = aliveOverride ?? batch.alive;
-  const { state, adapt, hRebound, output, prevOutput, plasticW } = batch;
+  const { state, adapt, hRebound, output, prevOutput, plasticW, outputHistory } = batch;
 
   const noiseSigmaArr = (noise && noise.sigma instanceof Float32Array) ? noise.sigma : null;
   const noiseSigmaScalar = (noise && typeof noise.sigma === "number") ? noise.sigma : 0;
@@ -384,10 +404,21 @@ export function stepBatch(topo, batch, sensorInputs, options = {}) {
       for (let p = inStart; p < inEnd; p++) {
         const e = edgeIncomingList[p];
         const fromIdx = edgeFrom[e];
-        // Sensors live at indices [0, S); the rest are eval targets.
-        const src = fromIdx < S
-          ? output[baseN + fromIdx]      // fresh-latched sensor signal
-          : prevOutput[baseN + fromIdx]; // prev-tick output, computeSignals-style
+        // Delayed edges read the source's output delay_ticks ago from the
+        // history ring. delay_ticks === 0 keeps the original read exactly:
+        // sensor → this tick's freshly-latched output; non-sensor → last
+        // tick's output (== history[now-1], so 0→1 tick is continuous for
+        // non-sensor sources).
+        const dTicks = edgeDelayTicks[e];
+        let src;
+        if (dTicks <= 0) {
+          src = fromIdx < S
+            ? output[baseN + fromIdx]      // fresh-latched sensor signal
+            : prevOutput[baseN + fromIdx]; // prev-tick output, computeSignals-style
+        } else {
+          const slot = ((batch.tick - dTicks) % ringSize + ringSize) % ringSize;
+          src = outputHistory[a * N * ringSize + fromIdx * ringSize + slot];
+        }
         const srcClamped = clampM(src, 0, 1);
         const effW = edgePlastic[e]
           ? clampDale(plasticW[baseE + e])
@@ -461,6 +492,18 @@ export function stepBatch(topo, batch, sensorInputs, options = {}) {
       output[baseN + i] = outVal;
     }
   }
+
+  // 3.5 Record this tick's outputs into the delay ring buffer, then advance
+  //     the tick counter. Delayed edges (step 3) read past slots from here.
+  const histSlot = batch.tick % ringSize;
+  for (let a = 0; a < A; a++) {
+    const baseN = a * N;
+    const baseH = a * N * ringSize;
+    for (let i = 0; i < N; i++) {
+      outputHistory[baseH + i * ringSize + histSlot] = output[baseN + i];
+    }
+  }
+  batch.tick++;
 
   // 4. Plastic weight updates. Use this tick's outputs.
   for (let e = 0; e < E; e++) {

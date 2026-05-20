@@ -147,7 +147,7 @@ class ObservationApp {
   // Batched evaluator helpers — lazy compile of the NeuralGraph into flat
   // TypedArrays, invalidated on graph mutation. See src/neural/batch.js.
   _rebuildBatch() {
-    this.topology = compileTopology(this.graph);
+    this.topology = compileTopology(this.graph, 1000 * CONFIG.FIXED_DT);
     this.batch = createBatchState(this.topology, Math.max(1, this.world.ants.length));
     for (let a = 0; a < this.batch.A; a++) seedBatchFromGraph(this.topology, this.batch, this.graph, a);
   }
