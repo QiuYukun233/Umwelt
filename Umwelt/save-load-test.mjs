@@ -19,6 +19,7 @@ import {
   CURRENT_STORAGE_VERSION,
   MIGRATABLE_STORAGE_VERSION,
 } from "./src/io/migrations.js";
+import { serializeApp, applyEnvelope } from "./src/io/schema.js";
 import { ChemicalField, World } from "./src/world.js";
 import { NeuralGraph } from "./src/neural.js";
 import { createEnvironmentState, LOGIC_CANVAS } from "./src/config.js";
@@ -420,6 +421,44 @@ test("graph + world snapshot: stepping diverges, reload converges", () => {
   assert.equal(w1.ant.energy, 75);
   assert.equal(g2.nodes.size, g1.nodes.size);
   assert.equal(g2.edges.size, g1.edges.size);
+});
+
+// ── 4. moduleMeta envelope round-trip ──
+console.log("schema.js moduleMeta");
+
+test("serializeApp writes moduleMeta and stamps version 10", () => {
+  const fakeApp = {
+    graph: { serialize: () => "{}" },
+    sensorEnabled: {},
+    world: { bodyParams: { turnScale: 1, speedScale: 1 }, serializeWorld: () => null },
+    sensorConfig: { toJSON: () => ({}) },
+    map: null,
+    moduleMeta: { volume_used_um3: 123 },
+  };
+  const env = serializeApp(fakeApp);
+  assert.equal(env.version, 10);
+  assert.deepEqual(env.moduleMeta, { volume_used_um3: 123 });
+});
+
+test("serializeApp defaults moduleMeta to null when the app has none", () => {
+  const fakeApp = {
+    graph: { serialize: () => "{}" },
+    sensorEnabled: {},
+    world: { bodyParams: { turnScale: 1, speedScale: 1 }, serializeWorld: () => null },
+    sensorConfig: { toJSON: () => ({}) },
+    map: null,
+  };
+  assert.equal(serializeApp(fakeApp).moduleMeta, null);
+});
+
+test("applyEnvelope restores moduleMeta onto the app", () => {
+  const fakeApp = {
+    graph: { deserialize: () => {}, ensureAnchors: () => {} },
+    sourceDefs: [],
+    world: { bodyParams: {} },
+  };
+  applyEnvelope(fakeApp, { version: 10, graph: "{}", moduleMeta: { x: 1 }, world: null });
+  assert.deepEqual(fakeApp.moduleMeta, { x: 1 });
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

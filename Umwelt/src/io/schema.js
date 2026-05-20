@@ -1,5 +1,5 @@
 /**
- * Save/load envelope for the Umwelt circuit (schema v9).
+ * Save/load envelope for the Umwelt circuit (schema v10).
  *
  * Outer shape:
  *   {
@@ -9,7 +9,8 @@
  *     bodyParams:    { turnScale, speedScale },
  *     sensorConfig:  SensorConfig.toJSON(),
  *     world:         WorldBlockV9 | null,   // v8+; v6/v7 payloads get null on migrate
- *     map:           MapBlock | null        // v9+; reserved for the map editor (step 2)
+ *     map:           MapBlock | null,        // v9+; reserved for the map editor (step 2)
+ *     moduleMeta:    object | null           // v10+; meta of a loaded Bevy-workshop module
  *   }
  *
  * See migrations.js for the upgrade chain and io/fields.js for the chem-field codec.
@@ -47,6 +48,9 @@ export function serializeApp(app) {
     // emits authored maps. Apps that have no map context simply omit; we
     // still write the field for forward-compat with editor saves.
     map: app.map ?? null,
+    // moduleMeta surfaces in v10: the volume / metabolic / delay metadata of
+    // a loaded Bevy-workshop module (display-only; null when none loaded).
+    moduleMeta: app.moduleMeta ?? null,
   };
 }
 
@@ -87,6 +91,9 @@ export function applyEnvelope(app, data, { onSensorConfig, onWarn } = {}) {
   }
   if (data.world) {
     app.world.deserializeWorld(data.world, onWarn);
+  }
+  if (data.moduleMeta !== undefined) {
+    app.moduleMeta = data.moduleMeta;
   }
 }
 
