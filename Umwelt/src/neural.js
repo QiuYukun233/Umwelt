@@ -17,7 +17,7 @@
 } from "./config.js";
 import { clamp, lerp } from "./math.js";
 import { KIND_TO_GROUP } from "./renderer/graph.js";
-import { LEARNING_RATE, WEIGHT_DECAY_RATE } from "./neural/constants.js";
+import { LEARNING_RATE, WEIGHT_DECAY_RATE, DELAY_MS_MAX } from "./neural/constants.js";
 
 const SENSOR_NODE_TYPES = new Set(["sensor_on"]);
 const EDITABLE_NODE_TYPES = new Set(["inter_exc", "inter_inh", "modulator"]);
@@ -105,6 +105,12 @@ function clampWeight(weight) {
 // about which regime a weight lives under.
 function clampToDaleLaw(weight) {
   return clamp(Number.isFinite(weight) ? weight : 0, 0, EDGE_WEIGHT_MAX);
+}
+
+// Axon conduction delay clamp. delay_ms ∈ [0, DELAY_MS_MAX]; absent or
+// invalid → 0 (instant — the pre-v10 default).
+function clampDelayMs(ms) {
+  return clamp(Number.isFinite(ms) ? ms : 0, 0, DELAY_MS_MAX);
 }
 
 function nextEdgeWeight(weight) {
@@ -486,7 +492,7 @@ export class NeuralGraph {
       if (edge.fromId === fromId && edge.toId === toId) return edge;
     }
     const fromType = fromNode.neuronType ?? fromNode.type;
-    const edge = { id: `edge:${this.nextEdgeIndex++}`, fromId, toId, weight: 1, plastic: false, mod_source_id: null };
+    const edge = { id: `edge:${this.nextEdgeIndex++}`, fromId, toId, weight: 1, plastic: false, mod_source_id: null, delay_ms: 0 };
     if (fromType === "inter_inh") edge.excitatory = false;
     else if (fromType === "modulator") edge.modulatory = true;
     else edge.excitatory = true;
@@ -775,7 +781,8 @@ export class NeuralGraph {
       })),
       edges: [...this.edges.values()].map((edge) => ({
         ...edge,
-        weight: edge.plastic ? clampToDaleLaw(edge.weight) : clampWeight(edge.weight)
+        weight: edge.plastic ? clampToDaleLaw(edge.weight) : clampWeight(edge.weight),
+        delay_ms: clampDelayMs(edge.delay_ms)
       })),
       nextNeuronIndex: this.nextNeuronIndex,
       nextEdgeIndex: this.nextEdgeIndex
@@ -800,7 +807,8 @@ export class NeuralGraph {
           fromId: edge.fromId ?? edge.from,
           toId: edge.toId ?? edge.to,
           plastic: edge.plastic === true,
-          mod_source_id: edge.mod_source_id ?? null
+          mod_source_id: edge.mod_source_id ?? null,
+          delay_ms: clampDelayMs(edge.delay_ms)
         };
         delete normalized.from;
         delete normalized.to;
