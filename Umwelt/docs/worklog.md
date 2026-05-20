@@ -7,6 +7,45 @@
 
 ---
 
+## 2026-05-21
+
+**做了什么**
+- 接着昨天的 brainstorming,走完 **writing-plans + subagent 驱动执行**两个阶段。
+- writing-plans 的作用域结论:spec 第 6 节 MVP 其实是 **4 个独立子系统**,当下只有
+  「HTML 侧 `edge.delay_ms` 支持」这一块能写出无占位符的实现计划(另外 3 块卡在
+  spec 第 8 节开放问题)。决定先做它。另:**Bevy 代码将来放独立 git 仓库**。
+- 实现计划落盘:`docs/superpowers/plans/2026-05-21-html-edge-delay.md`,6 个 task。
+- 用 subagent-driven-development 执行:每个 task 一个 implementer + spec review +
+  code-quality review,全程 TDD。建 `feat/html-edge-delay` 分支,8 个 commit,
+  最终评审 READY TO MERGE,**fast-forward 合进 main,分支已删**。
+- 落地内容(spec 第 7.4 节 A-lite 合约,HTML 侧):
+  - `edge.delay_ms` 字段(默认 0,序列化往返 + 钳到 `[0, DELAY_MS_MAX=500]`)。
+  - 存档 schema v9 → **v10**(delay_ms 靠 deserialize 默认;新增可选 `moduleMeta` 块)。
+  - `stepBatch` 用每节点输出历史环形缓冲实现传导延迟;`delay_ms=0` 是 bit-exact no-op。
+  - `src/io/module.js` 的 `parseModuleText` —— 解析 `umwelt-module-v1` 工坊导出。
+  - 编辑器工具栏「装载模块」按钮。
+- 关键设计决定(写进 plan):只有 `stepBatch` 支持 delay,`computeSignals` 保持
+  delay-free —— **编辑器预览会忽略 delay**(验收的 MVP gap,全 Bevy 化后消失);
+  可塑性更新读未延迟输出;工坊受体→HTML 感受器通道的重映射推迟。
+
+**未完成 / 坑**
+- **Task 6 的「装载模块」入口还没浏览器手测**。纯 DOM/文件输入胶水,无自动化测试。
+  plan 的 Task 6 Step 5 写了具体手测步骤 + 一个 fixture JSON,照着走一遍即可。
+- `ant-chemotaxis-test.mjs` 一直是红的 —— 在 main 上本来就红(评审员在干净 main
+  上验证过,逐字节相同),**不是本次引入**。一个待查的旧 bug。
+- Bevy 侧 3 个子系统(化学场仿真器 / 3D 工坊编辑器 / 关卡系统)还没计划,卡在
+  spec 第 8 节开放问题(3D 交互模型、轴突几何粒度、包络绘制等),需要单独一轮收敛
+  才能写实现计划。
+- `.git/worktrees` 下有几条权限锁住、prune 删不掉的陈旧 worktree 元数据(目录已不
+  存在),无害,可忽略。
+
+**下一步**
+- 浏览器手测 Task 6 的装载模块入口(plan Task 6 Step 5)。
+- 收敛 spec 第 8 节开放问题(尤其 3D 编辑器交互模型),之后才能为 Bevy 侧子系统
+  写计划。Bevy 项目按昨天的决定开**独立仓库**。
+
+---
+
 ## 2026-05-20
 
 **做了什么**
