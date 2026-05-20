@@ -44,6 +44,14 @@
 - 收敛 spec 第 8 节开放问题(尤其 3D 编辑器交互模型),之后才能为 Bevy 侧子系统
   写计划。Bevy 项目按昨天的决定开**独立仓库**。
 
+**收工状态**
+- main 今天 +9 个 commit:`06c494d`→`a1a95a4` 是 HTML `edge.delay_ms` 的 8 笔实现,
+  `40a7d80` 是本日志。`feat/html-edge-delay` 分支已合并并删除。
+- 工作区干净。实现计划 `docs/superpowers/plans/2026-05-21-html-edge-delay.md` 已入库。
+- 明天从这里接:先 `npm run dev` 浏览器手测「装载模块」入口(plan 第 6 个 task 的
+  Step 5,那里有 fixture JSON 和具体点击步骤);通过后再去收敛 spec 第 8 节,
+  为 Bevy 侧写计划。
+
 ---
 
 ## 2026-05-20
