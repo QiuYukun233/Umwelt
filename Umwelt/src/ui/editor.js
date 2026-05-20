@@ -117,8 +117,8 @@ export class NeuralEditor {
         this.importFile.value = "";
       }
     });
-    this.loadModuleBtn?.addEventListener("click", () => this.moduleFile.click());
-    this.moduleFile?.addEventListener("change", () => {
+    this.loadModuleBtn.addEventListener("click", () => this.moduleFile.click());
+    this.moduleFile.addEventListener("change", () => {
       const file = this.moduleFile.files[0];
       if (file) {
         file.text().then((text) => this.callbacks.onLoadModule?.(text));

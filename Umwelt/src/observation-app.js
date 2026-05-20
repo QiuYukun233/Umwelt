@@ -310,6 +310,7 @@ class ObservationApp {
     this.editor.setBodyParams(this.world.bodyParams);
     this.editor.setSensorConfig(this.sensorConfig);
     this.graph.reset(LOGIC_CANVAS.width, LOGIC_CANVAS.height);
+    this.moduleMeta = null;
     this._handleGraphChange();
   }
 
