@@ -16,13 +16,17 @@
  *         single `ant: {...}`, plus `focusedAntId` and `nextAntId`. The
  *         envelope grows an optional top-level `map` block (null in v9
  *         until the map editor in step 2 starts emitting maps).
+ *   v10 — edges may carry `delay_ms` (axon conduction delay, default 0).
+ *         The envelope grows an optional top-level `moduleMeta` block (null
+ *         until a Bevy-workshop module is loaded). delay_ms needs no graph
+ *         rewriting — NeuralGraph.deserialize defaults it.
  *
  * MIGRATABLE_STORAGE_VERSION is the oldest source version migrate() will
  * accept. Payloads below that are rejected; localStorage callers wipe and
  * fall through to a fresh default circuit, matching the pre-Step-5 shape.
  */
 
-export const CURRENT_STORAGE_VERSION = 9;
+export const CURRENT_STORAGE_VERSION = 10;
 export const MIGRATABLE_STORAGE_VERSION = 6;
 
 function v6_to_v7(data) {
@@ -72,10 +76,22 @@ function v8_to_v9(data) {
   return data;
 }
 
+function v9_to_v10(data) {
+  // v10: edges may carry `delay_ms`. Old edges lack the field; NeuralGraph
+  // .deserialize defaults it to 0 (instant), so the graph string needs no
+  // rewriting — this is a version bump plus the new optional top-level
+  // `moduleMeta` block (null = no workshop module loaded), mirroring how
+  // v9 introduced `map`.
+  data.moduleMeta = data.moduleMeta ?? null;
+  data.version = 10;
+  return data;
+}
+
 export const MIGRATIONS = {
   6: v6_to_v7,
   7: v7_to_v8,
   8: v8_to_v9,
+  9: v9_to_v10,
 };
 
 /**

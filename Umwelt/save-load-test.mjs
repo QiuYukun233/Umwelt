@@ -181,6 +181,25 @@ test("migrate(v8 with world=null) preserves null world and seeds map=null", () =
   assert.equal(up.map, null);
 });
 
+test("MIGRATIONS[9] upgrades v9 → v10 and seeds moduleMeta=null", () => {
+  const v9 = { version: 9, graph: "{}", world: null, map: null };
+  const out = MIGRATIONS[9](v9);
+  assert.equal(out.version, 10);
+  assert.equal(out.moduleMeta, null);
+});
+
+test("migrate(v9 payload) → CURRENT carries moduleMeta=null", () => {
+  const v9 = {
+    version: 9,
+    graph: JSON.stringify({ nodes: [], edges: [] }),
+    world: null,
+    map: null,
+  };
+  const up = migrate(v9);
+  assert.equal(up.version, CURRENT_STORAGE_VERSION);
+  assert.equal(up.moduleMeta, null);
+});
+
 test("migrate(v6 with world.ant) cross-jump produces ants[0].id === 0", () => {
   // A v6 payload doesn't have a world block at all; v6 → v7 → v8 adds
   // world=null, so by v9 the ants[] branch in v8_to_v9 takes the
