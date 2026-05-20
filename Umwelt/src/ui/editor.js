@@ -50,6 +50,8 @@ export class NeuralEditor {
     this.exportBtn = document.getElementById("editor-export-btn");
     this.importBtn = document.getElementById("editor-import-btn");
     this.importFile = document.getElementById("editor-import-file");
+    this.loadModuleBtn = document.getElementById("editor-load-module-btn");
+    this.moduleFile = document.getElementById("editor-module-file");
     this.bodyTurnSlider = document.getElementById("body-turn");
     this.bodyTurnVal = document.getElementById("body-turn-val");
     this.bodySpeedSlider = document.getElementById("body-speed");
@@ -113,6 +115,14 @@ export class NeuralEditor {
       if (file) {
         file.text().then((text) => this.callbacks.onImport?.(text));
         this.importFile.value = "";
+      }
+    });
+    this.loadModuleBtn?.addEventListener("click", () => this.moduleFile.click());
+    this.moduleFile?.addEventListener("change", () => {
+      const file = this.moduleFile.files[0];
+      if (file) {
+        file.text().then((text) => this.callbacks.onLoadModule?.(text));
+        this.moduleFile.value = "";
       }
     });
     this.bodyTurnSlider.addEventListener("input", () => this.onBodyParamChange());

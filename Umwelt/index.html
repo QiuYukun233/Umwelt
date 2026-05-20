@@ -42,12 +42,14 @@
     </div>
     <button class="btn mono" id="body-editor-btn" type="button">sensors</button>
     <div id="editor-actions">
+      <button class="btn mono" id="editor-load-module-btn" type="button">load module</button>
       <button class="btn mono" id="editor-import-btn" type="button">import</button>
       <button class="btn mono" id="editor-export-btn" type="button">export</button>
       <button class="btn mono" id="editor-reset-btn" type="button">reset</button>
       <button class="btn primary mono" id="editor-run-btn" type="button">▶ run</button>
     </div>
     <input type="file" id="editor-import-file" accept=".json" style="display:none">
+    <input type="file" id="editor-module-file" accept=".json" style="display:none">
   </div>
   <div id="editor-stage">
     <canvas id="editor-canvas"></canvas>

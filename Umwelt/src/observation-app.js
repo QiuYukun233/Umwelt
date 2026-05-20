@@ -25,6 +25,7 @@ import {
   readSavedEnvelope,
   writeSavedEnvelope,
 } from "./io/schema.js";
+import { parseModuleText } from "./io/module.js";
 import {
   compileTopology,
   createBatchState,
@@ -48,6 +49,7 @@ class ObservationApp {
     this.accumulator = 0;
     this.lastTime = 0;
     this.deathShown = false;
+    this.moduleMeta = null;
     this._frameCount = 0;
     this._tickCount = 0;
     this._fpsAccum = 0;
@@ -95,6 +97,7 @@ class ObservationApp {
       onBodyParams: (params) => this._applyBodyParams(params),
       onExport: () => this._exportCircuit(),
       onImport: (text) => this._importCircuit(text),
+      onLoadModule: (text) => this._loadModule(text),
       onSensorConfigChange: (config) => this._applySensorConfig(config),
     });
     this.editor.setGraph(this.graph);
@@ -322,6 +325,21 @@ class ObservationApp {
       onWarn: (msg) => this.world.log("danger", `导入：${msg}`),
     });
     if (data.bodyParams) this.editor.setBodyParams(this.world.bodyParams);
+    this._handleGraphChange();
+  }
+
+  _loadModule(text) {
+    const mod = parseModuleText(text);
+    if (!mod) {
+      this.world.log("danger", "装载模块：文件不是有效的 umwelt-module 导出");
+      return;
+    }
+    // The module graph is the standard NeuralGraph serialization; install
+    // it like an imported circuit. ensureAnchors re-pins sensor/motor nodes
+    // to the current sensor config. moduleMeta is display-only metadata.
+    this.graph.deserialize(mod.graph);
+    this.graph.ensureAnchors(LOGIC_CANVAS.width, LOGIC_CANVAS.height, false, this.sourceDefs);
+    this.moduleMeta = mod.meta;
     this._handleGraphChange();
   }
 
