@@ -332,7 +332,10 @@ class ObservationApp {
   _loadModule(text) {
     const mod = parseModuleText(text);
     if (!mod) {
-      this.world.log("danger", "装载模块：文件不是有效的 umwelt-module 导出");
+      // Surface the rejection where the player can see it. world.log feeds
+      // the behavior log, which the observation UI no longer renders, so it
+      // would be silent — the editor's notice toast is the visible channel.
+      this.editor.showNotice("装载失败：不是有效的 umwelt-module 文件");
       return;
     }
     // The module graph is the standard NeuralGraph serialization; install
@@ -341,6 +344,7 @@ class ObservationApp {
     this.graph.deserialize(mod.graph);
     this.graph.ensureAnchors(LOGIC_CANVAS.width, LOGIC_CANVAS.height, false, this.sourceDefs);
     this.moduleMeta = mod.meta;
+    this.editor.showNotice("已装载模块");
     this._handleGraphChange();
   }
 
