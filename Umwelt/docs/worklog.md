@@ -7,6 +7,36 @@
 
 ---
 
+## 2026-05-22
+
+**做了什么**
+- 浏览器手测 Task 6「装载模块」入口(05-21 收工状态留的下一步)。查出一个真 bug 并修复。
+- **Bug:** `_loadModule` 用 `world.log("danger", ...)` 报告成功/拒绝。但 behavior log
+  面板在 05-15 UI 重构里已被删,`World` 构造也没接 `onLog` 回调 —— `world.log` 写进
+  一个永远不渲染的数组。结果:拒绝一个非模块 JSON 时**完全无提示**,看着像"没拒绝"。
+  (`_importCircuit` 的 `onWarn` 同样失声,是 05-15 重构遗留的更大面坑,本次未一并处理。)
+- **修复 `022d60f`:** `_loadModule` 改用编辑器的 `showNotice` 提示条(1.4s 自动消失)。
+  坏文件弹「装载失败:不是有效的 umwelt-module 文件」,好文件弹「已装载模块」。
+  用 Playwright 驱动真 Chromium 验过:坏/好文件各自弹对提示,0 报错,`vite build` 通过。
+- 用户报的「窗口卡住」**未能复现**:照原路径(开编辑器→装模块→run、装载→刷新、50s
+  长跑)在真 Chromium 多次跑都正常,60fps、sim 正常推进;sim 环形缓冲代码另验 2 万
+  tick 无异常。最可能成因:**Vite 开发服务器在项目目录有文件变动时会热刷新页面** ——
+  调试期间反复往项目目录写临时脚本,把用户打开的页面一次次刷掉了(开发服务器日志确认
+  每次文件改动都 `page reload`)。
+
+**未完成 / 坑**
+- 「窗口卡住」未给出根因定论 —— 不可复现。若再现,需要用户的浏览器 Console 红字。
+- 为这次手测装了 Playwright(`npm install --no-save`,**未进 package.json**);Chromium
+  二进制在 Playwright 缓存目录。`module-fixture.json` 是临时测试夹具,未跟踪。三者都可清理。
+- `ant-chemotaxis-test.mjs` 旧 bug 仍红(非本次引入,见 05-21)。
+
+**下一步**
+- Task 6 手测完成,HTML `edge.delay_ms` 子系统就此收尾。
+- 收敛 spec 第 8 节开放问题(尤其 3D 编辑器交互模型),为 Bevy 侧 3 个子系统写计划。
+  Bevy 项目开**独立仓库**。
+
+---
+
 ## 2026-05-21
 
 **做了什么**
