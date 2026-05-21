@@ -35,6 +35,32 @@
 - 收敛 spec 第 8 节开放问题(尤其 3D 编辑器交互模型),为 Bevy 侧 3 个子系统写计划。
   Bevy 项目开**独立仓库**。
 
+**追加 · §8 收敛 → 工坊基质重构(同日下午/夜)**
+- 清理:Playwright + Chromium 卸载、`module-fixture.json` 删、dev 服务停 —— 工作区干净。
+- 用户做了功课:一份深度研究报告(`docs/compass_artifact_*.md`,已入库),主张工坊基质用
+  **网格 + 分层 + via + 横截面读取**(Zachtronics 式可读性 + 昆虫板层结构诚实)。
+- 走完整个 brainstorming,用户**全量采纳网格基质**。一连串决定敲定:
+  - 基质:网格 + 堆叠 2D 层(= 解剖板层)+ 垂直 via + 逐格曼哈顿布线。无限可扩魔方,无空间墙。
+  - 受体保留物理采样(网格嵌在解剖空间里);两段式测试保留。
+  - §4 物理约束重写并拧准:分级 only 无脉冲;三约束 = 延迟 ∝ 路径长 / 代谢功率(pJ/s,
+    瞬时不积分)/ 信号距离衰减;轴突粗细 √d 是三者共同杠杆;体积逐层 Σ;建造成本砍掉
+    (与体积共线);via 不单独计价。
+  - §5 测试场:可扩展标量场(多 contributor 类型 + phase 外壳),化学点源叠加 / 几何距离场 min。
+  - par 基线;参考电路拆成 修复关(软 trigger ≈ MVP 刚完)/ onboarding 脚手架
+    (gated-on-first-playtest)。
+- 产出新 spec v2:`docs/superpowers/specs/2026-05-22-bevy-workshop-grid-substrate-design.md`
+  (`3d8c277`),取代 05-20 那份(已标记 superseded)。
+
+**未完成 / 坑(追加)**
+- 用户正在 review v2 spec,凌晨收工,没看完。
+- 一处待用户拍板:**§7.2 —— 信号衰减要不要和 `delay_ms` 一起编译进 HTML**(A-lite)。
+  我暂按"要"写了(和延迟同类的诚实链,实现廉),HTML 侧因此多一条 `edge` 衰减因子待办。
+
+**下一步(追加,取代上面那条)**
+- 用户看完 v2 spec(含确认 §7.2)→ 进 writing-plans,为 Bevy 三子系统
+  (化学场仿真器 / 网格工坊编辑器 / 关卡系统)写实现计划,先定先做哪个。Bevy 开独立仓库。
+- brainstorming 的可视化 mockup 在 `.superpowers/brainstorm/`(gitignored)。
+
 ---
 
 ## 2026-05-21
