@@ -7,6 +7,38 @@
 
 ---
 
+## 2026-05-23
+
+**做了什么**
+- 落地 Bevy 子系统 B 计划的 **Task 10:HTML 侧 `edge.attenuation` 配套**。
+  spec §7.4 的"距离→衰减"诚实链需要 HTML 评估器同 lane 实现一个 per-edge 标量,
+  让工坊将来导出的模块可以把衰减直接编译进 HTML —— 与 `delay_ms` 同模式。
+- 实装范围:
+  - `edge.attenuation ∈ [0, 1]` 字段,默认 1.0(完全透传 → 旧图行为 bit-identical)。
+  - `NeuralGraph.computeSignals` 与 `stepBatch` 都在 `srcSignal * weight` 处补乘
+    `attenuation`;`stepBatch` 在 `compileTopology` 把它打平成 `edgeAttenuation`
+    Float32Array(与 `edgeDelayTicks` 并列)。
+  - 序列化 / 反序列化对称处理;clamp 到 [0,1];缺字段默认 1.0。
+  - 存档 schema **v10 → v11**(`migrations.js`):仅版本号 bump,旧图字段缺失由
+    `NeuralGraph.deserialize` 默认补 1.0 兜底。
+- 测试:新建 `attenuation-test.mjs`(11 个用例,涵盖字段默认 / 钳位 / 序列化往返 /
+  `stepBatch` 数值正确 / `computeSignals` 一致 / v10→v11 migration)。先 TDD 全红,
+  实装后全绿。回归:`delay-test` / `module-test` / `save-load-test` /
+  `plasticity-unit-test` / `batch-parity-test` / `plasticity-test` / `ant-gland-test`
+  / `ant-fixes-test` / `multi-ant-smoke-test` 全部 PASS。
+  `save-load-test` 一处 `version === 10` 硬编码改为 `CURRENT_STORAGE_VERSION`。
+
+**未完成 / 坑**
+- 子系统 B 其余 9 个 task 不在本仓 —— 它们在新仓 `D:/dev/umwelt-bevy/`(Bevy 化学场
+  仿真器),Task 10 是唯一活在 HTML 侧的工作项。
+- `test-neural.mjs` / `ant-chemotaxis-test.mjs` 在 main 上仍旧红(`sensorDefs` API
+  不匹配 / 旧 chemotaxis 数值),非本次引入,worklog 05-21 已记录。
+
+**下一步**
+- 由 Bevy 仓推进子系统 C(网格工坊编辑器)/ D(关卡)的计划。HTML 侧暂无新 task。
+
+---
+
 ## 2026-05-22
 
 **做了什么**

@@ -62,6 +62,10 @@ function clampDale(w) {
   if (!Number.isFinite(w)) return 0;
   return clampM(w, 0, EDGE_WEIGHT_MAX);
 }
+function clampAtten(a) {
+  if (!Number.isFinite(a)) return 1;
+  return clampM(a, 0, 1);
+}
 function gainFromMod(sourceSignal, effWeight) {
   const s = clampM(sourceSignal, 0, 1);
   const w = clampWeight(effWeight);
@@ -209,6 +213,15 @@ export function compileTopology(graph, refDtMs = 1000 / 60) {
     }
   }
 
+  // Per-edge signal attenuation ∈ [0,1]. Parallel to edgeWeight; default
+  // 1.0 (full passthrough) so edges without the field behave identically
+  // to pre-v11. Same lane as edgeDelayTicks — both are honest physical
+  // baggage compiled in by the Bevy workshop, §7.4.
+  const edgeAttenuation = new Float32Array(E);
+  for (let e = 0; e < E; e++) {
+    edgeAttenuation[e] = clampAtten(allEdges[e].attenuation);
+  }
+
   // Per-edge conduction delay, rounded to whole ticks at the fixed step.
   // ringSize covers the longest delay so the history buffer never aliases.
   const edgeDelayTicks = new Int32Array(E);
@@ -244,7 +257,7 @@ export function compileTopology(graph, refDtMs = 1000 / 60) {
     evalNodeIndices,
     motorNodeIndices, motorSourceIds,
     edgeFrom, edgeTo, edgeWeight, edgeKind, edgePlastic, edgeModSrc,
-    edgeInitW, edgeDelayTicks, ringSize,
+    edgeInitW, edgeAttenuation, edgeDelayTicks, ringSize,
     edgeIncomingStart, edgeIncomingList,
   };
 }
@@ -337,7 +350,7 @@ export function stepBatch(topo, batch, sensorInputs, options = {}) {
     sensorNodeIndices,
     evalNodeIndices,
     edgeFrom, edgeWeight, edgeKind, edgePlastic, edgeModSrc,
-    edgeDelayTicks, ringSize,
+    edgeAttenuation, edgeDelayTicks, ringSize,
     edgeIncomingStart, edgeIncomingList,
   } = topo;
   const A = batch.A;
@@ -423,10 +436,11 @@ export function stepBatch(topo, batch, sensorInputs, options = {}) {
         const effW = edgePlastic[e]
           ? clampDale(plasticW[baseE + e])
           : clampWeight(edgeWeight[e]);
-        const contrib = srcClamped * effW;
+        const atten = edgeAttenuation[e];
+        const contrib = srcClamped * effW * atten;
         const kind = edgeKind[e];
         if (kind === EK_MOD) {
-          gain *= gainFromMod(srcClamped, effW);
+          gain *= gainFromMod(srcClamped * atten, effW);
         } else if (kind === EK_INH) {
           inhSum += contrib;
         } else {

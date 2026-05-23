@@ -20,13 +20,19 @@
  *         The envelope grows an optional top-level `moduleMeta` block (null
  *         until a Bevy-workshop module is loaded). delay_ms needs no graph
  *         rewriting — NeuralGraph.deserialize defaults it.
+ *   v11 — edges may carry `attenuation` ∈ [0,1] (per-edge signal magnitude
+ *         scale, default 1.0 = full passthrough). HTML companion to the
+ *         Bevy workshop's §7.4 distance → attenuation honest chain — same
+ *         lane as delay_ms. Default is identity, so v10 graphs load cleanly:
+ *         NeuralGraph.deserialize fills attenuation=1.0 for any missing
+ *         field. Version bump only.
  *
  * MIGRATABLE_STORAGE_VERSION is the oldest source version migrate() will
  * accept. Payloads below that are rejected; localStorage callers wipe and
  * fall through to a fresh default circuit, matching the pre-Step-5 shape.
  */
 
-export const CURRENT_STORAGE_VERSION = 10;
+export const CURRENT_STORAGE_VERSION = 11;
 export const MIGRATABLE_STORAGE_VERSION = 6;
 
 function v6_to_v7(data) {
@@ -87,11 +93,20 @@ function v9_to_v10(data) {
   return data;
 }
 
+function v10_to_v11(data) {
+  // v11: edges may carry `attenuation` ∈ [0,1]. Old edges lack the field;
+  // NeuralGraph.deserialize defaults it to 1.0 (full passthrough), so the
+  // graph string needs no rewriting — version bump only.
+  data.version = 11;
+  return data;
+}
+
 export const MIGRATIONS = {
   6: v6_to_v7,
   7: v7_to_v8,
   8: v8_to_v9,
   9: v9_to_v10,
+  10: v10_to_v11,
 };
 
 /**

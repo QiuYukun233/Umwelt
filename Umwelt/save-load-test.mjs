@@ -426,7 +426,7 @@ test("graph + world snapshot: stepping diverges, reload converges", () => {
 // ── 4. moduleMeta envelope round-trip ──
 console.log("schema.js moduleMeta");
 
-test("serializeApp writes moduleMeta and stamps version 10", () => {
+test("serializeApp writes moduleMeta and stamps the current version", () => {
   const fakeApp = {
     graph: { serialize: () => "{}" },
     sensorEnabled: {},
@@ -436,7 +436,7 @@ test("serializeApp writes moduleMeta and stamps version 10", () => {
     moduleMeta: { volume_used_um3: 123 },
   };
   const env = serializeApp(fakeApp);
-  assert.equal(env.version, 10);
+  assert.equal(env.version, CURRENT_STORAGE_VERSION);
   assert.deepEqual(env.moduleMeta, { volume_used_um3: 123 });
 });
 

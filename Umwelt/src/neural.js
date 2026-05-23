@@ -113,6 +113,14 @@ function clampDelayMs(ms) {
   return clamp(Number.isFinite(ms) ? ms : 0, 0, DELAY_MS_MAX);
 }
 
+// Per-edge signal attenuation ∈ [0, 1]. Multiplies the transmitted signal
+// in the evaluator, in the same lane as edge.weight. Absent or invalid →
+// 1.0 (full passthrough — the pre-v11 default). HTML companion to the
+// Bevy workshop's §7.4 distance → attenuation honest chain.
+function clampAttenuation(a) {
+  return clamp(Number.isFinite(a) ? a : 1, 0, 1);
+}
+
 function nextEdgeWeight(weight) {
   const current = clampWeight(weight);
   const index = EDGE_WEIGHT_STEPS.findIndex((step) => Math.abs(step - current) < 1e-6);
@@ -492,7 +500,7 @@ export class NeuralGraph {
       if (edge.fromId === fromId && edge.toId === toId) return edge;
     }
     const fromType = fromNode.neuronType ?? fromNode.type;
-    const edge = { id: `edge:${this.nextEdgeIndex++}`, fromId, toId, weight: 1, plastic: false, mod_source_id: null, delay_ms: 0 };
+    const edge = { id: `edge:${this.nextEdgeIndex++}`, fromId, toId, weight: 1, plastic: false, mod_source_id: null, delay_ms: 0, attenuation: 1 };
     if (fromType === "inter_inh") edge.excitatory = false;
     else if (fromType === "modulator") edge.modulatory = true;
     else edge.excitatory = true;
@@ -636,9 +644,10 @@ export class NeuralGraph {
       const effectiveWeight = edge.plastic
         ? clampToDaleLaw(Number.isFinite(edge.w) ? edge.w : edge.weight)
         : clampWeight(edge.weight);
-      edgeSignals[edge.id] = sourceSignal * effectiveWeight;
+      const atten = clampAttenuation(edge.attenuation);
+      edgeSignals[edge.id] = sourceSignal * effectiveWeight * atten;
       if ((fromNode.neuronType ?? fromNode.type) === "modulator") {
-        gainByTarget[toNode.id] *= gainFromModulatorSignal(sourceSignal, effectiveWeight);
+        gainByTarget[toNode.id] *= gainFromModulatorSignal(sourceSignal * atten, effectiveWeight);
       } else if (isInhibitoryOutput(fromNode)) {
         inhibitoryByTarget[toNode.id] += edgeSignals[edge.id];
         additiveByTarget[toNode.id] -= edgeSignals[edge.id];
@@ -782,7 +791,8 @@ export class NeuralGraph {
       edges: [...this.edges.values()].map((edge) => ({
         ...edge,
         weight: edge.plastic ? clampToDaleLaw(edge.weight) : clampWeight(edge.weight),
-        delay_ms: clampDelayMs(edge.delay_ms)
+        delay_ms: clampDelayMs(edge.delay_ms),
+        attenuation: clampAttenuation(edge.attenuation)
       })),
       nextNeuronIndex: this.nextNeuronIndex,
       nextEdgeIndex: this.nextEdgeIndex
@@ -808,7 +818,8 @@ export class NeuralGraph {
           toId: edge.toId ?? edge.to,
           plastic: edge.plastic === true,
           mod_source_id: edge.mod_source_id ?? null,
-          delay_ms: clampDelayMs(edge.delay_ms)
+          delay_ms: clampDelayMs(edge.delay_ms),
+          attenuation: clampAttenuation(edge.attenuation)
         };
         delete normalized.from;
         delete normalized.to;
