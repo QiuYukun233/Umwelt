@@ -7,6 +7,63 @@
 
 ---
 
+## 2026-05-24
+
+**做了什么**
+- **Bevy 子系统 B(化学场仿真器)1–9 落地**(在新独立仓 `D:/dev/umwelt-bevy/`,§8 #8
+  既定)。10 个 task 用 subagent-driven 流程跑完(implementer + spec review + code
+  review,每 task 三段)。Task 10 是 HTML 侧的 attenuation,已记 05-23。
+  - 工作区 + `chem_field` crate,Bevy 0.15.3 / 2024 edition,workspace 继承。
+  - 数据/数学:`Channel`(ChemA–D + GeometryDistance 留口)+ `CombineOp`(Sum 化学 /
+    Min 几何留口);`Contributor` trait + `ChemicalPointSource`(高斯,σ(t)=√(σ₀²+2Dt)
+    扩散展宽,exp(−vt) 挥发);`Field` 按 combine_op 聚合;`PhaseSpec` + `PhaseSchedule`
+    多 phase 调度;`ChemFieldScene` + `SceneBuilder` 多 channel 路由。
+  - Bevy:`ChemFieldPlugin` + `ChemFieldSceneRes` Resource + Update step 系统;
+    `DebugVizPlugin` 体素 gizmo 调试可视化(可选,opt-in);两个 example(`static_single_source`
+    + `evolving_dual_source`)。
+  - 测试:20 单元 + 1 plugin smoke,全绿。两个 example 真窗口 run 验过,显卡识别正常,
+    场形与衰减/扩散行为符合预期。
+- **C-1 网格工坊计划 + 落地**:把"C 网格工坊编辑器"拆成 C-1/2/3/4(基质 → 布线 →
+  截面+成本 → 编译导出),先做 C-1。
+  - C-1 plan 写完(`docs/superpowers/plans/2026-05-24-bevy-subsystem-c1-grid-substrate.md`,
+    8 个 task),subagent-driven 跑完。
+  - 新建 `grid_workshop` crate(在同一 Bevy 仓):`CellCoord` + 锁定的世界坐标映射
+    (cell.x→world.x、layer→world.y、y→world.z;CELL_PITCH=1.0、LAYER_PITCH=2.0);
+    5 种 `NeuronKind` + `CellContents{Empty|Neuron|Via}`;稀疏 `Grid`(HashMap-backed,
+    `place`/`remove`/`get`/`occupied_cells` + `PlaceError`);`GridPlugin` 暴露
+    `GridRes`;`GridRenderPlugin` 双 system:`sync_cell_entities` 按 §3 七种内容物
+    彩色立方体 + `sync_layer_planes` 每个 active layer 一块半透明平面。
+  - `three_layer_demo` example(3 层 7 格)真窗口 run 通过,可看到 stratification。
+  - 测试:19 单元 + 2 plugin smoke,全绿。
+- **plan 文档归档**:B 与 C-1 两份 plan 都已 commit 进 Umwelt(`3a6e953` / `bfae9c0`)。
+
+**未完成 / 坑**
+- 工坊里 C-1 渲染:`sync_cell_entities` 不检测原地 contents 变更 —— 因为 `Grid::place`
+  拒绝已占用格子,内容只能 remove+place 改,diff 已处理。**C-2 若引入 `Grid::replace`
+  之类原地变更 API,渲染器要补按 contents 比对**。
+- B 的 `ChemicalPointSource::sample` 在 σ₀=D=0 退化输入下会 0/0 → NaN。无 debug_assert,
+  实测不会触发(玩家配的源都有正 σ₀),C-3/D 期可加一行守卫。
+- B plugin smoke 用了 `App::new() + init_resource::<Time>()` 而非 `MinimalPlugins`
+  —— `TimePlugin` 会覆盖 `Time::advance_by`。production 路径会跑全 plugin,smoke
+  暂时简化。C/D 接入真 App 后切回。
+- `umwelt-bevy` 仓默认分支是 `master`(host git 默认);两仓分支命名不一致。需要时
+  改名,目前不挡路。
+- pre-existing 红色测试 `test-neural.mjs` / `ant-chemotaxis-test.mjs` 仍未修(非本次
+  引入,worklog 05-21 已记录)。
+
+**下一步**(明日接)
+1. **C-2 计划之前先定一件事:神经元身份**。当前 `CellContents::Neuron(kind)` 没 ID,
+   布线端点要靠什么定位 —— coord-as-id(简单,但神经元不能移动)还是显式 `NeuronId`
+   + coord→id 映射(支持 save/load 与未来重排)。这事影响 save/load 与 HTML 编译,
+   不该在 C-2 写到一半才发现。建议小段 brainstorm。
+2. 定完 ID 模型后写 C-2 plan(曼哈顿布线 + via 作多 axon 共享导体 + 轴突粗细 + 可塑性
+   标记)。布线**别塞进 `CellContents`**,开 `src/core/routing.rs` 独立 `Routes` 表。
+3. 待办留口:C-3 横截面预占的 `src/debug.rs` 仍是空 placeholder。
+4. λ 公式(粗细 d ↔ 衰减/速度)要在 C-4 编译到 HTML 之前定常数(spec §4.2 估算,
+   `biology.rs` 还没建)。
+
+---
+
 ## 2026-05-23
 
 **做了什么**
