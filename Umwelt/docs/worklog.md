@@ -7,6 +7,42 @@
 
 ---
 
+## 2026-05-26
+
+**做了什么**
+- **C-2(布线 / 边模型)brainstorm + spec v0.1 → v0.2**,全程对照 `umwelt_design_constitution.md`。
+  - Brainstorm 起点是 "C-2 之前先定神经元身份"(worklog 2026-05-24 列的 #1)。先讨论 coord-as-id vs 显式 NeuronId,选 coord-as-id。
+  - 随后讨论 via 语义,用户给了关键论证:**离散网格上 cell 是位置原子单位,"同一格"= 同一位置,几何重合即电学连接;"同格信号独立"是自相矛盾的;格子稀缺性是布线谜题的灵魂**。via 唯一可行 = 每边私有路径段。已存为 memory `umwelt-grid-atomicity`。
+  - 接着摊开"边端点标识 + 完整性策略"二维空间(F1–F4 × I1–I5),正在 brainstorm 边的本体论(衍生 vs 一等公民)时,用户指回 `umwelt_design_constitution.md` —— 宪法已经把端点形式、完整性、cascade 非对称、replace_kind、undo P0、no-Via、no-overlap、tree-forbids-join、One d per edge 全部钉死。我之前一长串其实是在重新发明宪法已写过的东西。已存 memory `umwelt-design-constitution` 作为下次的 reference 入口。
+  - **新 load-bearing 设计**(宪法本轮新增 §2 行 30–31、§3 行 42–43):edge 是 cell 树(F4 推广 path→tree);tree 单 parent 结构性禁止 join,不需要 runtime 检查;MVP 把树突塌进 soma,fan-in 通过 ~6 邻格自然受限,要更多就用中继神经元搭漏斗(同型于自搭 OFF-cell);删 source = 整树,删 leaf = 剪到最近 fork。
+- **C-2 spec v0.1 草稿写完**,commit `34a4969`。
+- **收到 review 回执,定 v0.2 多处必改 + locked-in 决定**,commit `e502cad`:
+  - **单值索引 bug 修正**:v0.1 让 `cell_to_edge` 单值索引覆盖所有 edge cells(含神经元端点)→ 三神经元链 S→I→M 中 I 不能同时作 E1 叶 / E2 根 → 整条链建不出来。修正:`cell_to_edge` 只索引**线格**,加 `endpoint_to_edges: HashMap<CellCoord, SmallVec<EdgeId>>` 多值反查端点。
+  - **Via 改隐式**:删 `CellContents::Via`,删 `PathThroughEmpty` 错误,穿 `Empty` 合法(自动当作 via 段);C-1 已落地代码要同步改 —— 作为 C-2 实现计划的 task 0。
+  - **Modulator 失效定为降级**(不级联):plastic→false, mod_source→None, 拓扑不动。
+  - **PathTree 改单一扁平表示**(不要两变体 enum),is_path() 是查询非存储形态。
+  - **EdgeOps 作为唯一入口**:Grid 的 neuron mutator 改 `pub(crate)`,routes 与 grid 同 crate(`grid_workshop/src/routing/`)—— 结构性禁止绕过级联。
+  - **~6 fan-in 上限明文化为有意约束**(宪法 §2 honest simplification);prop test 必须覆盖"一个神经元被 ≥2 条边当端点"。
+
+**未完成 / 坑**
+- spec v0.2 已 review 通过,但 **C-2 实现计划(writing-plans)还没写**。下次开机第一件事。
+- C-1 改动(删 `CellContents::Via`)是 C-2 task 0 阻塞,实现计划要把这条排在最前。
+- C-4 的两条 hand-off 别丢:
+  1. 边降级时学到的权重 —— 冻结当前值 vs 弹回 `w_init`?
+  2. 权重持久化归属(C-2 的 `Edge` 故意不存权重,这是求值层的事)。
+
+**下一步(明日接)**
+1. 基于 spec v0.2 走 `writing-plans` 流程,写 C-2 实现计划到 `docs/superpowers/plans/2026-05-26-bevy-subsystem-c2-routing.md`(或 27,看明天日期)。
+2. 计划必含 **task 0 — 改 C-1**:删 `CellContents::Via` 变体,更新已落地的 `grid_workshop` crate + 在 C-1 plan 文档加注"v0.2 起 Via 作废"。
+3. 计划主体:`PathTree`(扁平 cells+parent)→ `Edge` + `PathEndpoint` newtype → `Routes`(双索引)→ `EdgeOps`(唯一入口,Grid mutator 私有化)→ `RoutesPlugin` + gizmo 渲染 → `routing_demo` example → 测试三件套(单元、smoke、prop test 含"神经元多边端点"用例)。
+4. 实现走 subagent-driven 流(同 B、C-1 节奏)。
+
+**新存的 memory**(下次自动加载)
+- `umwelt-grid-atomicity` — 格是位置原子,几何重合即电学连接;格子稀缺性是谜题灵魂
+- `umwelt-design-constitution` — `docs/umwelt_design_constitution.md` 是设计裁判,brainstorm 前先查
+
+---
+
 ## 2026-05-24
 
 **做了什么**
