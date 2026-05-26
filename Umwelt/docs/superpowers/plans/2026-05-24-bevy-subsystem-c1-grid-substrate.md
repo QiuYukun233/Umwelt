@@ -1,5 +1,7 @@
 # Bevy 子系统 C-1 — 网格基质运行时 实现计划
 
+> **v0.2 注(2026-05-27,随 C-2 v0.2 spec 落地):** `CellContents::Via` 变体作废,via 走隐式 — 见 `docs/superpowers/specs/2026-05-26-bevy-subsystem-c2-routing-design.md` §3.4。本文档下文凡引用 `CellContents::Via` 的 task(Task 3、Task 4、Task 6 渲染、Task 8 example)以 C-2 实现计划 Task 0 的改动为准,本文未回填以保留 v0.1 历史原貌。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在 `umwelt-bevy/` 工作区新增 `grid_workshop` crate,实现 spec v2 §2 的网格基质数据层 —— 堆叠的 2D 层、稀疏存储的格子、§3 的 5 种神经元 + via 两种格子内容物;Bevy 插件 + 极简 3D 渲染让"摆放了东西"可视化。不含布线、不含交互式 UI、不含成本读出(都在 C-2/C-3)。
