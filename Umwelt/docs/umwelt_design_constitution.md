@@ -9,8 +9,8 @@
 **Why (biology).** Neurons occupy 3D space; axons cost material and energy. Real brains minimize total wire length (Cajal's conservation principle; the *C. elegans* ganglion layout is the global wire-length optimum among ~40M orderings, Cherniak 1994). Neural tissue is genuinely laminar (*Drosophila* medulla M1–M10).
 
 **Invariants.**
-- The organ is an infinite, layer-stacked 3D grid. No sculpted shell — the organ's extent is *emergent* from neuron positions.
-- Convex-hull footprint is a **cost metric, never a wall**. Compute it per-layer (Σ of each layer's footprint × h), not as one combined-footprint prism.
+- The organ is an infinite, layer-stacked 3D grid. No sculpted shell — the organ's extent is *emergent* from its occupied cells (somata *and* wiring).
+- Convex-hull footprint is a **cost metric, never a wall**. Compute it per-layer (Σ of each layer's footprint × h), not as one combined-footprint prism. The hull encloses *all* occupied cells on the layer (somata + wire), so sprawling wiring inflates footprint — reinforcing wire economy.
 - Conduction delay ∝ Manhattan path length (`edge.delay_ms`).
 - Placing things far / spread out = slower + more metabolically expensive. Space is budget, not decoration.
 
@@ -57,7 +57,7 @@
 - Signals are continuous 0–1, **no spikes.** (Precondition for attenuation being honest — spikes are regenerative and do *not* attenuate.)
 - Attenuation: `distal = input × exp(−pathlen / λ)`.
 - Metabolic budget is a **sustained-power cap (pJ/s)**: resting + activity + synapse maintenance. The activity term is **instantaneous power ∝ mean activation, NOT a time-integral** — an integral would couple metabolism to runtime and break orthogonality with the delay/cycles axis.
-- Thickness `d` is one lever coupling four costs: velocity ∝ √d, λ ∝ √d, volume ∝ d²·len → metabolism. **One `d` per edge** (a branching tree shares one d). Comment that velocity and λ ride the same √d.
+- Thickness `d` is one lever, but it touches different costs at *different powers of d*: conduction velocity ∝ √d and λ ∝ √d (one cable-theory root); **metabolism (resting + activity) ∝ membrane area ∝ d·len** — pumps and leak channels live in the membrane, whose area grows only *linearly* with d; **volume ∝ d²·len** is a separate *space / material* cost (the §1 footprint family), **not** metabolism. So a fatter axon is faster and more attenuation-resistant (√d), costs linearly more to run (d), and takes quadratically more room (d²): one knob, three slopes. **One `d` per edge** (a branching tree shares one d). Synapse maintenance scales with synapse count, independent of d.
 - Plasticity is a per-edge property (`plastic`, `mod_source`). MVP allows it anywhere (a simplification); leave room to later gate *which* edges may be plastic by node type (mushroom-body locality).
 - Real units throughout (λ in μm, m/s, pJ/s, μm³). Centralize in `constants/biology.rs` with citations; estimate where insect data is thin and note it. Tuning changes numbers, never the unit system.
 
