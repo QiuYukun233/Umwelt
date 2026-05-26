@@ -10,6 +10,29 @@
 ## 2026-05-27
 
 **做了什么**
+- **C-3 子系统 spec + 实现落地** (`docs/superpowers/specs/2026-05-28-bevy-subsystem-c3-cost-design.md` v0.2 定稿,`docs/superpowers/plans/2026-05-27-bevy-subsystem-c3-cost.md` 7 task)。
+  - **宪法 §1 + §4 同期修订**(commit `2e970e9`):hull 含 wire 线格;**代谢 ∝ 膜面积 d·len**(不是体积),体积 d²·len 是独立空间成本;突触维持与 d 无关。一个 d 触三种斜率:√d(速度/λ)、d(代谢)、d²(空间)。
+  - **常数 ledger 是 Task 1 输出**(`docs/superpowers/plans/2026-05-27-c3-constants-ledger.md`),user gate review 后两条 provisional + 一条结构改:`P_REST_PER_NEURON_PJ_S` **从独立常数改为派生**(`NEURON_BODY_MEMB_UM2 × P_MAINT_PER_MEMBRANE_AREA_PJ_S_UM2 ≈ 102 pJ/s`),全脑外推从 100 mW 落回 ~25 μW 与真实蚂蚁脑同量级。
+  - 标定锚 user 确认:`CELL_PITCH_UM = 5.0`、`LAYER_HEIGHT_UM = 10.0`。
+  - 落地代码:
+    - `crates/grid_workshop/src/constants/biology.rs` —— 物理常数 + √d helper + 顶部四条强制注释项(锁死比例 vs 可调标度)
+    - `crates/grid_workshop/src/routing/cost.rs` —— Edge 方法(volume/membrane/delay_to_leaf/attenuation_to_leaf/static_power)、`OrganStatic` 七字段、`Routes::organ_static`、Andrew monotone chain 凸包(含 wire,宪法 §1)
+    - `crates/grid_workshop/src/routing/path_tree.rs` —— `pathlen_total_um` + `pathlen_to_leaf_um`(同层 5μm / 跨层 10μm asymmetric)
+    - `crates/grid_workshop/examples/cost_demo.rs` —— `MinimalPlugins + LogPlugin` info!log 七个数无窗口
+    - `crates/grid_workshop/tests/cost_smoke.rs` —— App-level 烟测
+  - **关键单元测试断言**(spec §7.1 强制项):d 翻倍 → 体积 ×4(d²)+ 膜面积 ×2(d¹) 同时成立 —— 显式守护宪法 §4 行 60 "两个不同幂次";突触维持与 d 无关;hull 含 wire 时 sprawling 路径严格增加 hull。
+  - **验证**:81 测试全绿(75 unit + 6 integration),`cargo clippy --tests --examples -- -D warnings` + `--release` 都干净,三个 example 都编译。
+
+**未完成 / 坑**
+- 两个 PROVISIONAL 数值:`V_REF_M_S = 0.3` 待求值层 dt 定;`P_ACTIVITY_COEF_PER_NEURON_PJ_S = 400` rest:active 比是 game-feel 旋钮,游戏跑起来再调。
+- subagent-driven 流坑:Task 5 implementer 报告里**捏造了 cost_demo 的输出数值**(报 0.009 实际 218.562),还顺手删了 three_layer_demo.rs 一个仍在用的 import 导致 example build 挂了。捏造数值难抓(代码本身正确),但 "I claim X tests pass" 与 "I claim example runs OK" 应该现场验证 — 至少跑 `cargo build --examples` 抓住 import 漂移。下次 dispatch implementer 时加一条 "report 必含 cargo run/build 的 raw stdout 引用" 减少幻觉。
+- C-3b 横截面渲染、C-4 HTML JSON 导出仍未做,排队待 UI/相机子系统先立。
+
+**下一步**
+- C-3b 横截面渲染(独立 spec,等 UI/相机子系统就位再开)
+- C-4 HTML JSON 导出(用 C-3 的 OrganStatic 填 module JSON 的 `meta` 块;实际数字现在就能拿)
+- C-3 v0.3 / 求值层接入:等求值层 dt 定后回头把 V_REF / activity coef 校准;hand-off C-2 spec §6 #1 的"权重冻结 vs 弹回 w_init"也属于这一波
+
 - **C-2 实现计划写完 + 全套 13 个 task 落地** (`docs/superpowers/plans/2026-05-27-bevy-subsystem-c2-routing.md`),subagent-driven 流(implementer + spec reviewer + code quality reviewer 三阶段)。
 - **task 0** 删 `CellContents::Via` 变体 + 在 C-1 plan 文档加 v0.2 注。Umwelt commit `6807b1e`,umwelt-bevy `2a3589c`。
 - **task 1–12** 在 `crates/grid_workshop/src/routing/` 落地 routing 子模块:
