@@ -7,6 +7,45 @@
 
 ---
 
+## 2026-05-27
+
+**做了什么**
+- **C-2 实现计划写完 + 全套 13 个 task 落地** (`docs/superpowers/plans/2026-05-27-bevy-subsystem-c2-routing.md`),subagent-driven 流(implementer + spec reviewer + code quality reviewer 三阶段)。
+- **task 0** 删 `CellContents::Via` 变体 + 在 C-1 plan 文档加 v0.2 注。Umwelt commit `6807b1e`,umwelt-bevy `2a3589c`。
+- **task 1–12** 在 `crates/grid_workshop/src/routing/` 落地 routing 子模块:
+  - `ids.rs` — `EdgeId(u32)` + `PathEndpoint(CellCoord)` newtype
+  - `path_tree.rs` — 单一扁平 `cells + parent`,`from_path` / `graft_branch` / `prune_to_node` / `is_path()` 是查询
+  - `edge.rs` — `Edge`、`PlaceEdgeError`、`NeuronRemovalImpact`、`PrunedBranch`、`DemoteRecord`、`KindReplaceImpact`
+  - `routes.rs` — `Routes` 双反查索引(`cell_to_edge` 线格单值 + `endpoint_to_edges` 端点多值 SmallVec)、`place_edge` 七个错误分支、`on_neuron_removed` 三种 cascade(source 整删 / leaf 剪叶 / modulator 降级)、`on_neuron_kind_replaced` Modulator 降级、`validate_invariants` I-1..I-7 双向校验
+  - `ops.rs` — `EdgeOps<'a>` 唯一入口;`Grid::place` / `Grid::remove` 改 `pub(crate)`,外部代码无法绕过级联(integration test 也走 EdgeOps,verified)
+  - `plugin.rs` — `RoutesPlugin` + `RoutesRes` + `debug_assertions` 不变量 validator system
+  - `render.rs` — gizmo 渲染 plastic / fixed 区分色
+  - `examples/routing_demo.rs` — R/L/K 三热键演示 cascade / prune / demote
+  - `tests/routing_smoke.rs` + `tests/routing_prop.rs`(proptest 200 case,5×5×5 小坐标空间,含"神经元多边端点"用例)
+- **review 发现一个真 bug**(spec gap):spec §2.1 隐含 `plastic ⟺ mod_source.is_some()` 但 `place_edge` 没强制;`on_neuron_removed` 的降级 filter 没用 `plastic &&` 守。修复:加 `PlaceEdgeError::PlasticModSourceMismatch`,validate_invariants 也加 paired 检查。commit `47ed77b`。
+- **clippy 清零**:用 `cargo clippy -- -D warnings` 跑出来 8 个错(`needless_range_loop` / `manual_contains` / `neg_cmp_op_on_partial_ord` ×2 / `collapsible_if` ×2 / `useless_conversion` ×2)+ 跑 `--tests --examples` 又多 2 个(`drop_non_drop` / `neg_multiply`)。一并清干净。commit `3eb8047`。
+
+**关键设计点已落地**
+- **单值索引 + 多值索引分工**:wire 单值守"线不挤同格"(I-2 / 宪法 §2);endpoint 多值允许 ~6 fan-in。三神经元链 S→I→M 是 regression test。
+- **隐式 via**:wire cell 穿 `Empty` 合法,占用进 `cell_to_edge` 但不改 Grid;删边后 Grid 仍 Empty。 
+- **级联非对称**:删 source 整树死,删 leaf 剪到最近 fork,modulator 失效只降级不动拓扑。
+- **EdgeOps 是结构性强制**(spec §6 #8 / 宪法 §3 cascade):`Grid::place/remove` `pub(crate)`,外部代码物理上拿不到神经元 mutator。
+- **plastic ↔ mod_source 配对**作为新 invariant(spec §2.1 隐含,review 才显式化)。
+- **65 测试** + **200 proptest case** 全绿。
+
+**未完成 / 坑**
+- 渲染层:gizmo 是 placeholder,无 mesh / 无 d 粗细可视化。C-3 才做。
+- `Vec3::from` 在 render.rs 一开始是 sonnet implementer 多加的"防御性转换"(`CellCoord::to_world` 返回 `glam::Vec3`,而 `bevy::prelude::Vec3` 是同一类型,re-export 关系)。clippy 抓到删掉了。**教训**:每个 task 末尾 plan 里就该带 `cargo clippy -- -D warnings`,不只 build,否则积累到 task 13 一波清。
+
+**下一步**
+- **C-3 子系统设计 spec**:横截面 / 成本(volume / 代谢 / 延迟 / 衰减),开始把 C-2 的 `Edge.thickness_d` 接到真实物理。需要先 brainstorm 哪些"代价量"是正交的(宪法 §1 + §4)、哪些可以推到编译时(C-4)。
+- **C-4 hand-off 别丢**:
+  1. modulator 失效降级时,plastic 权重是冻结当前值还是回到 `w_init`?(权重持久化在 C-2 的 Edge 故意没字段,在求值层。)
+  2. 导出/导入的稳定边 id 是用 `<root_coord>-><sorted_leaf_coords>` 派生(spec §6 #3)还是 EdgeId 字符串化?
+- **proptest 强度可以提升**:现在 5×5×5 + 多数 `place_edge` 因 `PathThroughNeuron` 或重复路径在 `PathTree::from_path` 就 reject,实际 mutate 次数偏少(0.01s 在 release 跑完 200 case)。后续如果不变量 bug 暴露,把"先放够神经元再画线"的 sequenced strategy 提上日程,或者给 path strategy 做 "走 Empty 优先"。
+
+---
+
 ## 2026-05-26
 
 **做了什么**
