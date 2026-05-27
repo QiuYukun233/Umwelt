@@ -9,7 +9,18 @@
 
 ## 2026-05-27
 
-**做了什么**
+**做了什么(后半段)**
+- **CLAUDE.md 治理层加 Decision Protocol** (`docs/umwelt_decision_protocol.md` → CLAUDE.md inlined, commit `4a28bd6`)。宪法管"决定落到哪",protocol 管"碰到宪法没覆盖的岔口怎么处理"。两条核心规则:**don't fabricate**(别给工程方便选择穿生物学外衣)+ **do route**(model/biology 岔口走 review,runtime guard 往往是埋着的设计决定)。位置:宪法 §4 之后、当前主角:蚂蚁之前 —— 跟宪法绑在治理块里,在所有操作内容之前。
+- **C-4 HTML JSON 导出子系统 brainstorm → spec v0.1 → 实现落地** (`docs/superpowers/specs/2026-05-27-bevy-subsystem-c4-html-json-export-design.md`, commit `4c0c7c8`)。
+  - **核心原则锁定**(memory `umwelt-export-only-what-you-own`):导出方只导此刻**真正拥有、不用编**的字段;缺的**省略**(JSON 里 key 不出现),不是写 null 占位。每个缺席块要有正经归宿,不是"导出方编默认"。
+  - 由此 MVP **只导 meta**:7 个 OrganStatic 字段(`neuron_count, total_volume_um3, total_membrane_um2, total_static_pj_s, layered_volume_um3, max_path_delay_ms, per_layer_hull_um2`)。`graph` 归未来求值层(动力学) + 关卡 I/O 契约(sourceId) + HTML adapter(画布坐标);`receptors` 归关卡 I/O 契约;`level_id` 归未来 Bevy 关卡子系统。三个都不是 Bevy 现在该编的。
+  - 落地:
+    - `crates/grid_workshop/src/routing/export.rs` —— `ModuleMetaDto` v1 schema + `to_module_json(&Grid, &Routes) -> String` 自由函数(不挂 `Routes::`,依赖箭头朝对)。**DTO 而非 derive(Serialize) for OrganStatic**:让"meta 恰含 7 字段"在构造上成立,而非事后断言。
+    - `crates/grid_workshop/examples/module_export.rs` —— 复用 cost_demo 同款场景,`println!` 输出可重定向到文件
+    - 4 unit test:empty grid 各字段为 0、3-neuron 各字段 > 0、顶层 keys 严格 = `{schema, meta}`、meta keys 严格 = 7 个名字
+  - **验证**:85 测试全绿(+4 vs 上轮 81),clippy dev+release 干净,example 跑通输出真实 JSON。
+  - **§6 人工跨语言验证执行了 → spec 的预测命中 → REJECTED**:`parseModuleText` 严格按 module.js:34-37 拒掉 meta-only payload(`if (!raw.graph || typeof raw.graph !== "object") return null`)。**这是 surface-of-discovery,不是 bug**。spec §6 已经预测到、并明确说:**别**为了让它过去而吐空对象的 graph,那违 "don't fabricate"。意义:meta-only 路径要工作,HTML 侧需要补一个"允许 graph 缺席"的入口 —— 这是 scope 决定、留给 user 拍板,不是 C-4 自己能填的窟窿。
+
 - **C-3 子系统 spec + 实现落地** (`docs/superpowers/specs/2026-05-28-bevy-subsystem-c3-cost-design.md` v0.2 定稿,`docs/superpowers/plans/2026-05-27-bevy-subsystem-c3-cost.md` 7 task)。
   - **宪法 §1 + §4 同期修订**(commit `2e970e9`):hull 含 wire 线格;**代谢 ∝ 膜面积 d·len**(不是体积),体积 d²·len 是独立空间成本;突触维持与 d 无关。一个 d 触三种斜率:√d(速度/λ)、d(代谢)、d²(空间)。
   - **常数 ledger 是 Task 1 输出**(`docs/superpowers/plans/2026-05-27-c3-constants-ledger.md`),user gate review 后两条 provisional + 一条结构改:`P_REST_PER_NEURON_PJ_S` **从独立常数改为派生**(`NEURON_BODY_MEMB_UM2 × P_MAINT_PER_MEMBRANE_AREA_PJ_S_UM2 ≈ 102 pJ/s`),全脑外推从 100 mW 落回 ~25 μW 与真实蚂蚁脑同量级。
@@ -29,8 +40,8 @@
 - C-3b 横截面渲染、C-4 HTML JSON 导出仍未做,排队待 UI/相机子系统先立。
 
 **下一步**
+- **C-4 hand-off:HTML 侧 meta-only 受信路径** —— 上面 §6 那个 REJECTED 的处置。两条候选:(a) parseModuleText 加一条"`graph` 缺失则只取 meta、levelId=null、graph/receptors 回 null"的旁路;(b) 整体推迟 C-4,等 graph 子系统准备好再做整套。这是 scope 决定 + HTML 改动,需 user 拍板。
 - C-3b 横截面渲染(独立 spec,等 UI/相机子系统就位再开)
-- C-4 HTML JSON 导出(用 C-3 的 OrganStatic 填 module JSON 的 `meta` 块;实际数字现在就能拿)
 - C-3 v0.3 / 求值层接入:等求值层 dt 定后回头把 V_REF / activity coef 校准;hand-off C-2 spec §6 #1 的"权重冻结 vs 弹回 w_init"也属于这一波
 
 - **C-2 实现计划写完 + 全套 13 个 task 落地** (`docs/superpowers/plans/2026-05-27-bevy-subsystem-c2-routing.md`),subagent-driven 流(implementer + spec reviewer + code quality reviewer 三阶段)。
