@@ -95,6 +95,7 @@ function buildFixture({
       mod_source: e.mod_source_id ? coords.get(e.mod_source_id) : null,
       delay_ticks_override: ov.delayTicks ?? null,
       attenuation_override: ov.attenuation ?? null,
+      init_w_override: ov.initW ?? null,
     };
   });
   return {
@@ -267,6 +268,8 @@ function buildHebbianSaturation() {
     plasticWTrace.push([batch.plasticW[plasticEdgeIdx]]);
   }
 
+  const edgeOverrides = new Map([[ep.id, { initW: 0.5 }]]);
+
   const fx = buildFixture({
     name: "hebbian-saturation",
     source: "plasticity-unit-test.mjs C2 (saturation subtest)",
@@ -275,6 +278,7 @@ function buildHebbianSaturation() {
     motorTrace,
     sensorIds: [sourceNodeId("L_chem_A")],
     motorIds: [motorNodeId("motor_forward")],
+    edgeOverrides,
   });
   fx.plastic_w_trace = plasticWTrace;
   return fx;
