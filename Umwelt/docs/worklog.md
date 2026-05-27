@@ -10,6 +10,18 @@
 ## 2026-05-27
 
 **做了什么(后半段)**
+- **C-3 v0.3 求值层落地** (`docs/superpowers/specs/2026-05-27-bevy-subsystem-c3v3-eval-layer-design.md` spec, `docs/superpowers/plans/2026-05-27-bevy-subsystem-c3v3-eval-layer.md` plan, umwelt-bevy 11+ commits)。Subagent-driven 流跑 9 task,5 个 oracle 在 max_relative ≤ 1e-5 全绿:
+  - **3 个 port 真 bug 被 oracle 抓到**(spec §6 说的 surface point 这次具体兑现了):
+    1. plastic decay baseline 用错变量 —— Bevy 用 `edge_init_w[e]` 而 JS 用 `edge.weight`(authored synaptic weight);二者在 Bevy 默认 1.0/1.0 重合,所以 unit test 看不出来;hebbian oracle 一上来就抓到。
+    2. modulator 初值 = 0 而非 `(MOD_GAIN_BASELINE - MOD_GAIN_MIN)/(MOD_GAIN_MAX - MOD_GAIN_MIN) ≈ 0.31034`(JS batch.js:134-140 的 initState),导致 modulator 起步即拉低 gain 到地板 0.1,Hebbian drive 被压制 ~300×。
+    3. inter_inh 的 `tau_discharge` / `g_rebound` 在 JS 是 per-node(默认 + 节点级 override),Bevy 端口只读全局 `DEFAULT_*` 常数;振荡器节点 `tau_discharge=0.4`(默认 10)被忽略,oracle 在 tick ~70 偏离捕到。
+    每个 fix 都引 JS source-of-truth 行号,审核确认无臆造。
+  - **结构性保留**:spec §7 Q2 双缓冲(`output_prev` / `output_next` 类型分离 + 指针级断言)、Q1 显式 Euler、Q3 通道绑定在 Puzzle 不在神经元、Q5 `compile()` 无缓存。
+  - **新加 fixture 字段**:`init_w_override`(plastic 边的起始 w,Bevy 默认 `edge_init_w=1.0` 无 headroom 看不到 Hebbian 增长)。dual-write 到 `edge_weight + edge_init_w` 模拟 JS `updateEdgeWeight` 语义。
+  - **EvalTopology 新字段** `tau_discharge` / `g_rebound`(per-node Vec<f32>);`compile()` 现在填默认值,`tests/eval_oracle.rs::build_topo` 从 fixture 填实际值。打了 TODO 提醒未来 Bevy UI / C-4-extension 要把 per-neuron 值从 Grid metadata 接进来。
+  - **demo example**(`cargo run --example step_response`):sensor→inter_exc→motor 链,sensor 60 ticks 0 + 60 ticks 1,motor 在 tick 119 达 0.2554,过 0.2 阈值 → passed=true;static volume=210.708 um³ / membrane=298.332 um² / power=787.831 pJ/s,activity=112.205 pJ,三轴 par 都通过(loose 1e6/1e6/1e9 target)。
+  - **108 测试全绿**(97 lib unit + 11 integration:5 oracle + 2 routing_smoke + 2 cost_smoke + 1 routing_prop + 1 doctest dummy),clippy dev + release 干净。
+
 - **CLAUDE.md 治理层加 Decision Protocol** (`docs/umwelt_decision_protocol.md` → CLAUDE.md inlined, commit `4a28bd6`)。宪法管"决定落到哪",protocol 管"碰到宪法没覆盖的岔口怎么处理"。两条核心规则:**don't fabricate**(别给工程方便选择穿生物学外衣)+ **do route**(model/biology 岔口走 review,runtime guard 往往是埋着的设计决定)。位置:宪法 §4 之后、当前主角:蚂蚁之前 —— 跟宪法绑在治理块里,在所有操作内容之前。
 - **C-4 HTML JSON 导出子系统 brainstorm → spec v0.1 → 实现落地** (`docs/superpowers/specs/2026-05-27-bevy-subsystem-c4-html-json-export-design.md`, commit `4c0c7c8`)。
   - **核心原则锁定**(memory `umwelt-export-only-what-you-own`):导出方只导此刻**真正拥有、不用编**的字段;缺的**省略**(JSON 里 key 不出现),不是写 null 占位。每个缺席块要有正经归宿,不是"导出方编默认"。
@@ -40,9 +52,13 @@
 - C-3b 横截面渲染、C-4 HTML JSON 导出仍未做,排队待 UI/相机子系统先立。
 
 **下一步**
-- **C-4 hand-off:HTML 侧 meta-only 受信路径** —— 上面 §6 那个 REJECTED 的处置。两条候选:(a) parseModuleText 加一条"`graph` 缺失则只取 meta、levelId=null、graph/receptors 回 null"的旁路;(b) 整体推迟 C-4,等 graph 子系统准备好再做整套。这是 scope 决定 + HTML 改动,需 user 拍板。
+- **C-3 v0.3 续:V_REF / activity coef 校准** —— 两个 PROVISIONAL 现在能跑实际谜题看 par 比例,可以开始调
+- **第一个真 Zach-like puzzle** —— 定义一个有趣的具体谜题(关联学习?互抑振荡?),不只是 step-response smoke
+- **C-2 Edge 加 authored weight 字段** —— 现在 `edge_weight` / `edge_init_w` 默认 1.0,UI 还没接;一旦有了 UI(或前期通过别的接口)再 wire 进 topology.rs:130
+- **Bevy UI 子系统 brainstorm** —— 离线 puzzle harness 跑通后,下一个杠杆是把它给真玩家用;UI 是硬骨头,先 brainstorm
 - C-3b 横截面渲染(独立 spec,等 UI/相机子系统就位再开)
-- C-3 v0.3 / 求值层接入:等求值层 dt 定后回头把 V_REF / activity coef 校准;hand-off C-2 spec §6 #1 的"权重冻结 vs 弹回 w_init"也属于这一波
+- C-4 §6 REJECTED 处置仍 park(HTML 不再是 C-3 数字的目标消费者,见 CLAUDE.md 产品形态决定);hand-off C-2 spec §6 #1 的"权重冻结 vs 弹回 w_init"也属于这一波
+- 涌现 / 蚂蚁 / 化学世界仍 park 作 campaign 层
 
 - **C-2 实现计划写完 + 全套 13 个 task 落地** (`docs/superpowers/plans/2026-05-27-bevy-subsystem-c2-routing.md`),subagent-driven 流(implementer + spec reviewer + code quality reviewer 三阶段)。
 - **task 0** 删 `CellContents::Via` 变体 + 在 C-1 plan 文档加 v0.2 注。Umwelt commit `6807b1e`,umwelt-bevy `2a3589c`。
