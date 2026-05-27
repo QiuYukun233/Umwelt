@@ -66,7 +66,35 @@ These belong to the review layer. Surface them; don't quietly pick.
   - **Ratio-locked / faithful** — the powers of `d` (√d, d, d²), exponential attenuation, geometric coefficients (π/4, π). Fixed by physics/geometry. **Do not tune them.**
   - **Scale / balance** — absolute magnitudes (pJ/s values) and cross-term weights. **Tuning knobs.** Mark provisional; don't chase a real brain's absolute numbers — only the relative balance matters for `par`.
 
+## 产品形态：Bevy 工坊先行的 Zach-like
+
+**决定**：产品的第一形态 = Bevy 工坊里的 Zach-like 单回路谜题游戏。核心机制三件套：
+- **格子稀缺**（宪法 §2 / memory `umwelt-grid-atomicity`）—— 一格一物，几何重合即电学连接，布线即谜题
+- **物理走线**（C-2 的 PathTree）—— 边是穿过格子的树，距离决定延迟和衰减
+- **多轴成本 par**（C-3 的 OrganStatic）—— 体积、膜面积、静态功率、凸包面积、max delay 五维优化
+
+玩家循环：选谜题 → 在格子上摆神经元 → 走线 → "run"（求值层算输入到输出）→ 通过/不通过 + 三轴成本对比 par → 迭代。
+
+**这条决定反转了原来"先 JS 验证 Tier 4 涌现、再迁 Bevy"的原则。** 老原则没有被忘，而是被想清楚后取代：
+- 老原则的前提是"游戏成立性依赖涌现"。当时担心 Bevy 投资了一堆涌现却不成立。
+- 这条 Zach-like **单回路谜题不依赖涌现**。一条电路 + 一对 I/O + par 多轴本身就能撑起 Zachtronics 类型的游戏循环。
+- 所以"Bevy 先行"不是在赌涌现，是在赌一个已被验证过的游戏类型 + 我们独特的诚实物理约束（C-3 那套）。
+
+**为什么不"JS 先验"**：格子稀缺 / PathTree / 多轴 par 这三件**只存在于 Bevy 仓**。在 JS 上先验 = 把 C-1/C-2/C-3 (14+7 task)在 JS 重写一遍，然后转回 Bevy 再写一次，中间还要承担 port 走样的经典风险（nematode → ant 的痛已吃过一次）。
+
+### 涌现 / 蚂蚁 / 化学世界 = 已命名、推后的 campaign 层
+
+不是 drop、是 park。Tier 4 涌现（CLAUDE.md test 5/6/7：关联学习、学习+遗忘、多蚂蚁 ChemB 路径跟踪）仍是**中心赌注**，只是推到工坊单回路游戏立住之后作为 campaign / 后期场景。当前 `src/creatures/ant.js` + 化学场 + observation-app 的所有代码继续存在、不删；只是不在主路径上推进。
+
+### 由此衍生的 park 项
+
+- **C-4 HTML JSON 导出的 §6 REJECTED**：park。HTML 不再是 C-3 数字的目标消费者；不急着给 `parseModuleText` 补 meta-only 旁路。`to_module_json` 留着，未来 Bevy 工坊自己的 save/share/leaderboard 会复用它（或显式被新 schema 替换）。
+- **C-3 v0.3 / 求值层接入**晋升为新主线：单回路谜题没有 "run" 就没有游戏。
+
 ## 当前主角：蚂蚁
+
+> **状态**：parked campaign layer。本节内容仍是有效的生物学/解剖事实，但在 "Bevy 工坊先行" 决定下推到 campaign 阶段做。当前主路径是 Bevy 工坊单回路谜题；蚂蚁身体、传感器、执行器、化学场代码继续存在不删，但不在主线推进。详见上方「产品形态」节。
+
 
 线虫（nematode）代码封存于 `src/creatures/nematode.js`，不删除。蚂蚁实现为 `src/creatures/ant.js`，作为默认生物。
 
