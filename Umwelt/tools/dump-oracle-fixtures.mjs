@@ -83,6 +83,11 @@ function buildFixture({
     coord: coords.get(n.id),
     kind: KIND_NAME[n.neuronType ?? n.type],
     tau: n.tau ?? null,
+    // PIR overrides (JS `addNeuronNode("inter_inh", ..., { tau_discharge,
+    // g_rebound })`). Bevy's `EvalTopology` now has per-node slots for both;
+    // the oscillator oracle relies on these.
+    tau_discharge: n.tau_discharge ?? null,
+    g_rebound: n.g_rebound ?? null,
   }));
   const edges = [...graph.edges.values()].map((e) => {
     const ov = edgeOverrides?.get(e.id) ?? {};
