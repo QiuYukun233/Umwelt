@@ -7,6 +7,26 @@
 
 ---
 
+## 2026-05-28
+
+**做了什么**
+- **C-2 Edge authored weight 落地** (`docs/superpowers/specs/2026-05-28-bevy-subsystem-c2-edge-authored-weight-design.md` spec, `docs/superpowers/plans/2026-05-28-bevy-subsystem-c2-edge-authored-weight.md` plan, umwelt-bevy commits `73c70cc`→`7ec6356`)。给 `Edge` 加玩家授权的突触权重,接通到求值层 —— 兑现 C-3 v0.3 worklog 里"edge_weight/edge_init_w 硬编码 1.0"那个坑。Subagent-driven 流跑 3 task,每 task 两段 review(spec→quality)+ 最终全特性 review。
+  - **模型 settle 干净,无 fork**:JS `batch.js:202-207` 定死了形态 —— 一个授权字段 `Edge.weight`。固定边是运行时权重 `[0.1,1.0]`;可塑边是先天 baseline + tick-0 起点(同一个值)`[0,1]`(使 `w_init=0` 从零学习可达)。独立的运行时 `edge.w`(学到的当前值,异于 baseline)只为 save-state 回放,不是第二个授权旋钮 —— 本次不做(无 save/load)。
+  - **magnitude-only 结构性成立**:非负值域使符号进不去权重,符号永远在源神经元类型(Dale)。不靠运行时检查。和 `replace_kind` 干净组合(换类型翻符号、幅值不动,无需重授权)。
+  - **边界 reject 而非 clamp**:`place_edge` 加 `PlaceEdgeError::WeightOutOfRange{weight,plastic}`,plastic-aware 区间。写成 **accept-if-in-range**(`!(w>=lo && w<=hi)`)而非取反式 —— NaN 全比较为 false,前者自动拒掉 NaN,后者会漏。专门一个 NaN 测试钉住这个形式。运行时 `clamp_w`/`clamp_dale` 照旧留作 Dale 安全网(双层)。
+  - **常量复用防漂移**:验证区间引 `constants/eval.rs` 的 `EDGE_WEIGHT_MIN/MAX`(= eval clamp 用的同一对),授权边界和运行时 clamp 不会偷偷分叉。per-flag 路由对齐:plastic→clamp_dale(floor 0)、fixed→clamp_w(floor 0.1)。
+  - **compile() 接通**:单一授权值同喂 `edge_weight`(baseline)+ `edge_init_w`(start);二者发散仅是 oracle override 的 test/save-state seam。
+  - **粒度边界**(记在 spec,非 bug):权重 per-edge(一棵轴突树共享一个),同 §4 "one d per edge" 档简化。将来"同源不同目标不同权重"是 per-target 升级路径,类比 §2 树突升级。
+  - **review 抓到的**:Task 1 scope creep(subagent 顺手加了个 example + 一个无关 test)被 spec review 抓到并回退(`b8573d0`);两处现已失真的注释(声称 topology 硬编码 1.0)分别在 `ff8eb84`/`7ec6356` 修正;Task 2 补了 plastic 侧 out-of-range 测试缺口 + 常量复用。
+  - **验证**:102 lib + 5 oracle 全绿(oracle override seam 不受授权路径影响,如 spec 所诺),clippy 干净,`step_response` demo `passed:true`。最终全特性 review:ready to land,零 issue。
+
+**下一步**(候选,需 user 拍板)
+- 第一个真 Zach-like 谜题(现在 par 多轴 + 授权权重都齐了,可以设计输入时间线 + 期望输出 + par 目标的真关卡)
+- V_REF / activity coef 两个 PROVISIONAL 校准(谜题能跑了,有了校准锚)
+- Bevy UI 子系统 brainstorm(摆神经元 / 走线 / 设权重 / 点 run 的交互层)
+
+---
+
 ## 2026-05-27
 
 **做了什么(后半段)**
