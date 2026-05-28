@@ -19,6 +19,24 @@
   - **障碍 = 惰性 InterExc 神经元**(v1 表示法;墙的代谢混进绝对成本但 par 相对不受影响,已在 spec/doc 标注;真正 Blocked 格类型记进升级路径)。
   - **铭文 = 被动电缆理论**(Hodgkin & Rushton 1946 首测 λ),不是 M-P 逻辑(跟着推后的逻辑门谜题)、不是 HH 1952 主动脉冲(我们信号非脉冲)。诚实警觉保留:铭文说物理,不断言神经元类型。
 
+- **方向修正:dev 级 UI 上马**(memory `umwelt-zachlike-needs-dev-ui`)。之前"纯代码跳过 UI"被判定 over-correct:对 Zach-like,摆电路的手感是核心乐趣、纯代码测不出;空间电路没视觉没法想。定性:粗、丑、灰盒、坚决不打磨,是想东西+验手感的工具,不是产品 UI(那是将来 Claude Design 的事)。唯一失败模式 = UI 无底洞。
+  - **第一步 只读查看器**(umwelt-bevy `1c7aa23`,`examples/eval_viewer.rs`):扩 GridRenderPlugin/RoutesRenderPlugin,神经元 cube 按激活发光(emissive ∝ `output`),Space/S/R 播放/单步/重置,成本三轴 + tick 走 console。**依赖查证:求值层无需改动** —— `EvalState`/`EvalTopology` 字段全 pub、`step_eval`/`compile` 公开,viewer 自己跑 step 循环读 `s.output`。
+  - **第二步 交互编辑**(umwelt-bevy `af04e0c`→`62b90c1`):
+    - **自动布线器**`route_same_layer`(`routing/pathfind.rs`,7 单测):给两神经元算同层单目标 BFS 短路径,守 no-overlap(`grid.get==Empty && edge_at_wire_cell.is_none()`),bounded(SEARCH_MARGIN=12)。连线的前提。
+    - **编辑模式**:Tab 切正交俯视相机(拾取 = cursor→ray→当前层平面→格子,免 3D pick),`P/C/X/K/M` 工具 + `1-5` 选神经元类型。Place/Connect(点 A 点 B 自动布线)/Delete(级联)/Replace。每次编辑后重编译 Sim,可立即播放。文字全走 console(workspace bevy 无 bevy_ui/bevy_text,不为几行字碰它)。
+    - **有限 move**(`62b90c1`):仅当神经元所有边都是单叶、非可塑、且它不是被可塑边绑的 modulator 时才做(remove+place+逐条重走线,保留 d/weight);否则 console 警告拒做。**完整 move(扇出树/可塑/分支重接)推后** —— 单目标布线器做不了,routed 为设计 fork。
+    - 全程 console-only;build/clippy clean,112 lib 测全绿;windowed run-smoke 干净(window 起、无 panic);**交互手感未由我目验**(拾取精度/相机/编辑后发光),留 user playtest。
+
+**未完成 / parked**
+- **衰减谜题 layer-hop cheese**(final review 抓到):无界 3D 格子里有限墙总能被另一层绕过(且更便宜、还过 par)。结构性发现:有限障碍逼不出长绕路,真迷宫路由需要 bounded 区域/真 Blocked 格概念,或第一题改用"距离+d 预算"基底(不是迷宫)。viewer 现在能直接看见这个 cheese。**待 user 拍板**。
+- **eval/puzzle.rs harness**:`Vec<Case>` battery + `StaysBelowThrough` Expected 变体(TODO 在 puzzle.rs:33),双触角/抑制谜题要才做。
+- **完整 move**、真 Blocked 格类型、跨层布线/扇出树布线。
+
+**下一步候选(需 user 拍板)**
+- 处理 layer-hop cheese(改基底 or 建 Blocked 概念)
+- 用 viewer playtest 编辑器手感,卡哪修哪
+- 给衰减谜题/编辑器补 spec 或继续搭蚂蚁电路
+
 ---
 
 ## 2026-05-28
