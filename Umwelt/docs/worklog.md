@@ -7,6 +7,20 @@
 
 ---
 
+## 2026-05-29
+
+**做了什么**
+- **第一道真 Zach-like 谜题落地:单路衰减修复** (`docs/superpowers/specs/2026-05-28-bevy-subsystem-first-puzzle-attenuation-repair-design.md` spec, `docs/superpowers/plans/2026-05-28-bevy-subsystem-first-puzzle-attenuation-repair.md` plan, umwelt-bevy commits `a05d686`→Task4)。brainstorm→spec→plan→subagent-driven 4 task。修复题:sensor→motor 轴突被切,玩家重接;信号沿线衰减 `exp(−len/λ)`,绕太远就太弱推不动 motor。
+  - **关键模型发现(reframe 了整道题)**:延迟在谜题尺度是 **sub-tick**。同层格 5 μm、V_REF 0.3 m/s → 每格 ~0.017 ms,一 tick 16.7 ms,要 ~1000 格才够一个 tick。几十格谜题里 `delay_ms_to_ticks` 恒为 0。**界定了模型能算什么**:活在幅值/慢动力学区(衰减、振荡、抑制、门控),不在精细时序区(符合探测、Reichardt 类出局)。让延迟可分辨要把传导调慢 ~1000×(0.3 mm/s),生物学上不诚实(虫轴突 0.1–几 m/s),不假造。记进 `biology.rs` V_REF 旁。
+  - 因此第一题从 user 原构想的"双触角符合探测靠延迟配平"**转基底为单路衰减**(user 拍板)。衰减在谜题尺度可分辨:λ=300 μm@d=1,30 格×0.61、60 格×0.37。
+  - **机制对着 step.rs 核过**:motor 是瞬时节点(`out=net_input.clamp`),`motor_out = sensor·weight·atten`。过关 = atten ≥ 0.5 → 预算 ≈41 格(208 μm)。参考解 ≈32 格(atten 0.587 过),太长解 ≈44 格(atten 0.480 不过)。
+  - **反例 = 另一条绕太远的电路,不是另一组输入** → harness 零改动(单个 ThresholdByTick 正例 + 两个 guard 测试:参考解过/绕太远不过)。`Vec<Case>` battery 推迟(YAGNI)。
+  - **校准数与手算几乎完全吻合**(volume 710.66 vs 711、membrane 1209.15 vs 1209、power 1869.68 vs ~1870)—— 强证实现正确而非自洽。三轴 par 留 ~10–25% margin,d-加粗逃生路按 d²/d 自然撑爆 par。
+  - **障碍 = 惰性 InterExc 神经元**(v1 表示法;墙的代谢混进绝对成本但 par 相对不受影响,已在 spec/doc 标注;真正 Blocked 格类型记进升级路径)。
+  - **铭文 = 被动电缆理论**(Hodgkin & Rushton 1946 首测 λ),不是 M-P 逻辑(跟着推后的逻辑门谜题)、不是 HH 1952 主动脉冲(我们信号非脉冲)。诚实警觉保留:铭文说物理,不断言神经元类型。
+
+---
+
 ## 2026-05-28
 
 **做了什么**
