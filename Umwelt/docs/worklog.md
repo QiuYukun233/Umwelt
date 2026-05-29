@@ -17,9 +17,21 @@
   - **Q2 振荡可达性:无瓶颈,默认参数就持续振。** 先确认编辑器**调不了 tau/tau_discharge/g_rebound** —— `topology.rs:142-145` TODO 明说 per-node 这三个没从 grid 接线,`compile()` 给每个 InterInh 硬填默认(tau=3.0、tau_discharge=10.0、g_rebound=7.0);玩家唯一的旋钮是拓扑+边权重。**实测**(一次性 scratch 测试,已删):最小半中枢(1 sensor 恒驱 + 两 inter_inh 互抑)用**默认 3.0/10/7 持续振荡**(early/late 窗口各 5 次交替,周期稳定);讽刺的是已验证 fixture 的 1.5/0.4/7 在这个最小拓扑反而后半衰减。**结论:用默认参数 + 纯拓扑就能搭出能振的 CPG,不需要 per-node 调参,坚决不建调参 UI。**
   - **手搭配方**:1× sensor(求值时恒喂 1.0 当持续驱动)→ inter_inh A;A↔B 互抑(两条边);各 inter_inh → 一个 motor 把交替读出来。
 
+- **Editor v2 落地:egui 鼠标驱动 dev 工具**(spec `2026-05-30-editor-v2-egui-frontface-design.md`,plan `2026-05-30-editor-v2-egui-frontface.md`,umwelt-bevy `47b9ea2`→`a94a29f`)。brainstorm→spec→plan→subagent-driven 9 task,每 task 两阶段 review(spec→quality)+ 最终全特性 review。**v1 失败模式反过来**:v1 把"粗"做到错的维度(砍掉格子+UI 结构,只剩键盘模态+console),v2 守的红线 = 完整元素集、鼠标驱动、丑可以但缺不行。
+  - **后端别动的精确界定**:不重构引擎(routing/EdgeOps/eval/picking 拾取数学全不动),但给已授权字段的薄 clamp setter 在界内 —— `Routes::set_edge_weight` / `set_edge_thickness` + 私有 `weight_range(plastic)` 公因子(被 `place_edge` 和新 setter 共用,防 authored-bound 漂移)+ `SetEdgeParamError`,TDD。
+  - **bevy_egui 0.31 dep gate 先验**:在 bevy 0.15.3 + workspace `default-features=false`(只有 bevy_render/pbr/gizmos/winit + tonemapping_luts/ktx2/zstd)下 EguiPlugin/EguiContexts 编过。dev-dependency,不入库 deps。
+  - **egui 套面板**:top bar(Play/Pause/Step/Reset、tick、Edit/View 开关、三轴成本——**无 par**:工坊里没载入谜题就没 par);左 panel(6 工具含 Select + 5 类型暖色色板 `#D8B060/#8FAE58/#C87050/#A890BC/#C68A5E` + 层 ±);右 inspector(神经元 = 只读 kind/coord/默认 tau·g_rebound;边 = 改 d/weight 滑条直通 setter + recompile,plastic/mod_source 只读)。**plastic/mod_source 编辑 + 神经元参数编辑(g_rebound/tau)推到将来 Tier-3 那条活**(per-node 参数本来就没存,改它要动后端;且半中枢实测默认值已能振,不缺它)。
+  - **3D 重做**:多层 wireframe lattice(预留体积,当前层亮、±1 暗、±10 格窗口)+ 层 ± 键(`[`/`]`)和按钮;神经元 = warm 色填充(activation × 暖色,floor 0.12)+ 类型色外框,**activation = 填充不辉光**(纠 v1 的 emissive 错);**线沿格点阵的棱画**(min-corner via `PathTree::cells()`,胞体中心→棱节点的短 stub),**不是中心到中心**(那是被否的"方块+连线"长相)。`RoutesRenderPlugin` 移除。
+  - **egui 拾取 gate**:`contexts.ctx_mut().wants_pointer_input()` → 早退;面板系统 `.before(handle_edit_click)` 保证 gate 读到当帧 egui 状态。
+  - **final review 抓到一件**:egui Edit/View 按钮设了 `edit_mode` 但没切相机(原版只 Tab 切),鼠标驱动的工具里这是半残元素。已修:抽 `sync_edit_camera` 系统从 `edit_mode` 变化驱动相机 ortho/persp 切换,Tab 和 egui 按钮共用同一路径。
+  - **两阶段 review 真抓到两件硬的**:(1) Task 1 quality review 抓到 `(w_lo,w_hi)` 逻辑在 `place_edge` 和 setter 间重复,抽 `weight_range(plastic)` 公因子做唯一真实源;(2) Task 3 quality review 抓到 egui 面板系统和 `handle_edit_click` 之间没 ordering 约束,`wants_pointer_input` 可能读到上帧状态,加 `.before(handle_edit_click)` 修。这俩是真值——剩下的 review 多为 cosmetic minor。
+  - **验证**:114 lib 测全绿、clippy `--all-targets` 干净、每次 windowed smoke launch 干净无 panic。**视觉正确(strut 看不看得出"走棱"vs 中心到中心、fill 辨识度、拾取精度)是 user playtest 的事**,CC 看不到渲染——spec §5.1 留了 surface-clause:若 strut 长相不对,按规则报回来再调。
+- **CLAUDE.md 加预留概念**:架构约束节加「格体积 = 体块组织(未来);轴突 = 沿格点阵棱走线」+ 已知将来对齐点 no-overlap 单位 cell→strut(`49f0c5d`)。**不为此重构路由**,留到将来跟体块一起对齐。
+
 **下一步**
-- **在编辑器里手搭半中枢 CPG**(上面的配方),这就是编辑器的真实 playtest —— 摆/连/看激活随 tick 交替,卡哪修哪(拾取精度/相机/编辑后发光)。窗口 user 驱动、CC 看不到渲染。
-- CPG 立住后继续往一整只蚂蚁的回路扩。
+- **用 editor v2 手搭半中枢 CPG + playtest**:demo 场景里已经有现成的 A↔B 互抑对,先按 Play 看一眼;然后用鼠标自己搭一个(1 sensor 恒驱→inter_inh A;A↔B 互抑;各 inter_inh→motor)。边搭边把卡的地方报出来:拾取精度/相机/strut 视觉(crux)/fill 辨识度/inspector 手感。
+- **strut 看相**:user 反馈"on the struts 不像"就 surface(spec §5.1),min-corner 不是定死的——改规则或贴某条特定棱都行。
+- CPG 立住后继续往一整只蚂蚁的回路扩(传感器/执行器/腺体接入),那时再开新一轮 spec/plan。
 
 ---
 
