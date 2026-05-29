@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-05-30
+
+**做了什么**
+- **战略转向 + 记录对齐(止血)**。把"Bevy 工坊先行"的下一步具体化:**不再凭空设计单题,而是先在编辑器里手搭一整只蚂蚁**,作为整个 grid/走线/成本/eval 架构的集成测试;谜题从蚂蚁的真实电路与损坏派生。**单边衰减修复谜题(连同 layer-hop fork)作废** —— 它是"凭空设计单题"路线的产物。耐久决定写进 `CLAUDE.md`「产品形态」节(新增「路径细化:先搭一整只蚂蚁」子节),不再只活在 worklog,免得每个 session 把 layer-hop 当 CRITICAL 翻出来。
+  - **layer-hop cheese 降级**:从"CRITICAL 待拍板的下一步"降为"已记录的结构约束(无界 3D 逼不出有限墙的迷宫绕行)",留待将来真做空间路由谜题再翻。不在主路径上。
+- **为手搭 CPG(半中枢振荡器)扫障 —— 查证两个可能挡路点**(只读+一次性实测,没替 user 搭):
+  - **Q1 抑制符号:确认成立,无需修。** `edge_kind` 在 `topology.rs:171` 按**源节点类型**编译(`EdgeKindCode::from_node_type`),InterInh 源 → `Inh`;`step.rs:181` `net_input=(exc_sum−inh_sum)·gain`,inh 真被减掉。Dale 律已落实,从 inter_inh 连出去的边确实压制目标。之前"fixed excitatory edges"含糊只因参考解源是 Sensor/InterExc。
+  - **Q2 振荡可达性:无瓶颈,默认参数就持续振。** 先确认编辑器**调不了 tau/tau_discharge/g_rebound** —— `topology.rs:142-145` TODO 明说 per-node 这三个没从 grid 接线,`compile()` 给每个 InterInh 硬填默认(tau=3.0、tau_discharge=10.0、g_rebound=7.0);玩家唯一的旋钮是拓扑+边权重。**实测**(一次性 scratch 测试,已删):最小半中枢(1 sensor 恒驱 + 两 inter_inh 互抑)用**默认 3.0/10/7 持续振荡**(early/late 窗口各 5 次交替,周期稳定);讽刺的是已验证 fixture 的 1.5/0.4/7 在这个最小拓扑反而后半衰减。**结论:用默认参数 + 纯拓扑就能搭出能振的 CPG,不需要 per-node 调参,坚决不建调参 UI。**
+  - **手搭配方**:1× sensor(求值时恒喂 1.0 当持续驱动)→ inter_inh A;A↔B 互抑(两条边);各 inter_inh → 一个 motor 把交替读出来。
+
+**下一步**
+- **在编辑器里手搭半中枢 CPG**(上面的配方),这就是编辑器的真实 playtest —— 摆/连/看激活随 tick 交替,卡哪修哪(拾取精度/相机/编辑后发光)。窗口 user 驱动、CC 看不到渲染。
+- CPG 立住后继续往一整只蚂蚁的回路扩。
+
+---
+
 ## 2026-05-29
 
 **做了什么**
@@ -28,14 +44,14 @@
     - 全程 console-only;build/clippy clean,112 lib 测全绿;windowed run-smoke 干净(window 起、无 panic);**交互手感未由我目验**(拾取精度/相机/编辑后发光),留 user playtest。
 
 **未完成 / parked**
-- **衰减谜题 layer-hop cheese**(final review 抓到):无界 3D 格子里有限墙总能被另一层绕过(且更便宜、还过 par)。结构性发现:有限障碍逼不出长绕路,真迷宫路由需要 bounded 区域/真 Blocked 格概念,或第一题改用"距离+d 预算"基底(不是迷宫)。viewer 现在能直接看见这个 cheese。**待 user 拍板**。
+- **衰减谜题 layer-hop cheese**(final review 抓到):无界 3D 格子里有限墙总能被另一层绕过(且更便宜、还过 par)。结构性发现:有限障碍逼不出长绕路,真迷宫路由需要 bounded 区域/真 Blocked 格概念,或第一题改用"距离+d 预算"基底(不是迷宫)。viewer 现在能直接看见这个 cheese。**【2026-05-30 更新:谜题作废、此项降级为已记录的结构约束,不再 CRITICAL —— 见 2026-05-30 entry 与 CLAUDE.md】**
 - **eval/puzzle.rs harness**:`Vec<Case>` battery + `StaysBelowThrough` Expected 变体(TODO 在 puzzle.rs:33),双触角/抑制谜题要才做。
 - **完整 move**、真 Blocked 格类型、跨层布线/扇出树布线。
 
-**下一步候选(需 user 拍板)**
-- 处理 layer-hop cheese(改基底 or 建 Blocked 概念)
-- 用 viewer playtest 编辑器手感,卡哪修哪
-- 给衰减谜题/编辑器补 spec 或继续搭蚂蚁电路
+**下一步候选(需 user 拍板)** —— **【已被 2026-05-30 取代:谜题作废,下一步 = 在编辑器里手搭蚂蚁/CPG】**
+- ~~处理 layer-hop cheese(改基底 or 建 Blocked 概念)~~ 降级,见 2026-05-30
+- 用 viewer playtest 编辑器手感,卡哪修哪 ← 仍有效,并入手搭 CPG
+- 给衰减谜题/编辑器补 spec 或继续搭蚂蚁电路 ← 收敛为"继续搭蚂蚁电路"
 
 ---
 
