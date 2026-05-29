@@ -65,8 +65,17 @@ hit the 3D grid (`ctx.wants_pointer_input()` → skip world pick that frame).
 - **Neurons** = a marker at the cell, drawn in its type color (§5.3). Rough soma
   marker; do not agonize over occupy-cell vs land-on-node — pick a reasonable
   rough form.
-- **Wires** run along the lattice **struts** (segment per cell-to-cell hop in the
-  path), not filling cells.
+- **Wires** render **on the lattice struts (the edges/棱 of the point lattice) —
+  NOT center-to-center.** Connecting cell centers reproduces exactly the rejected
+  "box + connecting line" look; that is forbidden. The backend cell path is
+  unchanged (still a sequence of cells); this is a **render-side mapping only**:
+  the right-angled cell path is mapped onto lattice edges and drawn as a polyline
+  lying on those edges. This strut rendering is the crux of the v2 visual fix —
+  the implementation MUST land on struts, not centers.
+  - The exact cell-path → strut mapping (which of the parallel edges a straight
+    corridor segment hugs, and how corners turn) is a plan/impl detail. The path
+    is axis-aligned so the mapping should be clean; **if it turns out genuinely
+    ambiguous (e.g. which edge a corridor hugs), surface it before drilling.**
 - **Activation = fill, not glow** (fixes v1's emissive glow): each neuron marker is
   an outline always (type color); an inner fill is shown at intensity = the
   neuron's activation value (`s.output[i]`). No bloom/glow.
@@ -112,10 +121,12 @@ Current kind highlighted. These hex values are applied as given; no color design
   one awkward mechanism). CPG needs neither. Deferred to the future Tier-3
   plasticity / neuron-param-authoring task, which will add proper setters.
 
-### 5.5 Cost + par readout
+### 5.5 Cost readout
 
 Three-axis static cost (`organ_static`: volume µm³, membrane µm², static pJ/s)
-shown **in-window** (egui), off the console.
+shown **in-window** (egui), off the console. **No par** — the build-the-ant editor
+has no puzzle loaded, so there is no par target to compare against; the readout is
+the three-axis cost itself. par appears only later, when a puzzle is loaded.
 
 ### 5.6 Playback bar
 
