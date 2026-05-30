@@ -7,6 +7,33 @@
 
 ---
 
+## 2026-05-31
+
+**做了什么**
+- **编辑器增量:相机簇 + 糙存档 + 快照 undo**(spec `2026-05-31-editor-camera-save-undo.md`,umwelt-bevy `8bd6529` 实现 + `7656a9f` 相机修复,D:/dev `aa56812` spec)。在 editor v2 之上补三个可用性洞:相机不能动、不能存、不能撤销。gate→spec(两块)→实现 block 1→commit,全程**后端别动**(只有 v2 那两个边 setter 碰过引擎)。
+  - **panorbit gate**:`bevy_panorbit_camera 0.25.0` 是 bevy `^0.15` 上最高的版本(0.34 已跳到 bevy 0.18),`default-features=false` 下编过。
+  - **相机**:View = panorbit(orbit/zoom/pan,透视);Edit = 俯视正交 + 右拖平移 + 滚轮缩放(左键留给拾取)。**Fit**(按钮/`F`/进模式·加载·切层自动)框占用格的包围盒,空时框原点——**这同时就是 Edit 空屏 bug 的修复**(老相机永远看世界原点)。
+  - **有界 lattice**:贴电路 +1 格(随电路长),换掉半径 10 糊满屏。View = 透明线框魔方;Edit = 当前层干净 2D 格 + 亮边框。
+  - **存档/undo 共用一个机制**:example 自己的**原语 DTO**(`SavedCircuit`)经 **EdgeOps 重放**还原。**引擎类型零 serde/Clone derive**——"后端别动"字面成立;还原走 `place_*` 校验路径,渲染(占用 reconciler)+ Sim 自动重同步。糙单文件 json(非版本化格式)。undo 在每次改动工具动作前、每次边滑条拖动起手各记一次前态。
+  - **block 2 = 推后路线(只写文档不实现)**:框选/多选、子电路复制粘贴(模块)、神经元参数授权(g_rebound/tau,Tier-3)、版本化存档+迁移、任意轴编辑切片、玩家观察 UI(交 Claude Design)、体块组织/棱式 no-overlap。各带 what/why-later/rough-how,写进 spec §9。
+- **playtest 抓到三个相机 bug,全修(`7656a9f`)——都是"引擎约定 vs 我的假设"的形状,记下学**:
+  - **panorbit 在 PostUpdate 无条件重写 transform/projection**(它的 `enabled` 只 gate 输入,不 gate transform 写入),每帧覆盖我的 Edit 相机。修:`run_if(in_view_mode)` 门控整个 `PanOrbitCameraSystemSet`,Edit 模式让它完全停摆,Edit 相机由我的 fit+pan/zoom 独占。
+  - **Edit 空屏的真因是单位 bug**:`OrthographicProjection::default_3d()` 用 `ScalingMode::WindowSize`,这里 `scale` 是**世界单位/像素**,scale≈15 让视野横跨约 1 万世界单位、电路缩成点(picking 仍算得出格 → `[Select] None` 能触发但屏上空)。修:`ScalingMode::FixedVertical{viewport_height}`(分辨率无关的世界单位),fit 设 height = 内容跨度+margin,平移按 视高/窗高 = 世界/像素。
+  - **回 View 显示旧的 Edit 相机直到拖一下**:panorbit 只在"值变了"时才重写 transform,而我 fit 时把 current==target,正好触发它跳过。修:进 View 置 `force_update=true` 强制当帧重算。
+  - **每模式各管各的相机,无跨模式存/还原**(老 `PerspectiveView` 早已删)。user 目验:Edit 渲染正常、回 View 立刻正、来回切稳定。
+- **验证**:114 lib 测全绿(引擎未动)、clippy `--all-targets` 干净、launch 无 panic。相机渲染/手感由 user playtest 确认(已过)。
+
+**未完成 / 坑**
+- **手感常数未调**(都是一行的事,等 user 报):Edit 平移方向/灵敏度的符号、fit 的 margin 松紧、缩放步长。
+- **跨层自动布线没有**:`route_same_layer` 是同层;搭 3D 跨层回路目前要手动,真做要等 roadmap 的"任意轴编辑切片"。
+- **strut 走线观感**:user 这轮没专门盯,仍是 spec §5.1 留的视觉 crux,后续盯。
+
+**下一步**
+- **用编辑器手搭电路**:先玩明白预置的半中枢 CPG(Play 看 A↔B 交替),再从零搭最小回路(sensor→inter+→motor),熟悉 Place/Connect/Delete/Inspector/Save/Undo。
+- 往**一整只蚂蚁**的回路扩(传感器/执行器/腺体接入);扩的过程暴露的架构问题就是下一轮 spec 的素材。
+
+---
+
 ## 2026-05-30
 
 **做了什么**
