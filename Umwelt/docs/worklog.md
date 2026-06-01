@@ -7,6 +7,30 @@
 
 ---
 
+## 2026-06-02
+
+**做了什么**
+- **研究日:蚂蚁神经回路 roadmap**(spec `docs/superpowers/specs/2026-06-02-ant-circuit-roadmap-design.md`,commit `89c2939`)。brainstorm→**6 域并行论文研究子代理**(odor 导航 / locomotion / 学习·蘑菇体 / 化学通讯 / 空间导航 gap-hunt / 其余反射+缺失模态),全带真源 → 综合成 roadmap:**7 簇 A–G**(运动底座 / 趋化 / 近场 / 化学通讯 / 内态学习 / **空间导航(新一等簇)** / 感知扩展)、**相位 P0–P7**、**8 个路由 fork**、硬件 GAP 表、~60 引文。对齐 CLAUDE.md test 1–7。
+  - **决定:导航做成一等簇、分级扩真器官硬件**(light 拆 L/R→视网膜阵列、温/湿、偏振罗盘、里程计)。原则定调:**「有时要为诚实付代价但不畏惧,这定义我们是谁」**(存 memory `umwelt-honesty-cost`)。
+  - **研究修正了原清单 3 处**:CPG 不是前进节律器(前进=紧张驱动,半中枢归宿是搜索摆动);学习规则有真 GAP;习惯化是独立一类学习。
+- **用户给的 navigation brief**(AI 研究偏振/PI/环吸引子墙,归档 `docs/research/2026-06-02-navigation-wall-brief.md`)**解决两个最硬 fork**:
+  - **F-PI** = 漏「**PI with forgetting**」(比完美 PI 更忠实——Stone et al. 2017 的 CPU4 本就 leak k=0.1、蚁行为本就漏);墙 = **仅 TB1 环吸引子**(前馈分级网搭不出,数学:Seung 1996/Zhang 1996/Noorman 2024),**立着做教学**,不加环吸引子原语。
+  - **F-COMPASS** = 给**原始偏振 opponent 通道**(忠实 DRA),朝向 decode 当玩家谜题(不给算好的标量)。
+- **F-LEARN 定案(仅文档,代码未改)**:可塑规则去 `post` → **`−η·pre·mod`,depression 主导**(合 Hige et al. 2015:MB 可塑突触前、DAN 门控、与突触后无关),行为方向靠玩家搭的 **MBON 平衡结构**。措辞:**去 `post`=去虚构;留 depression+平衡=选自然解**。回写 CLAUDE.md「可塑突触设计」+ 宪法 §4。**(B)** Dale 符号定方向记为"未来真需 potentiation 时的可选进阶,现在不给"。
+- **一条原则入宪**(`docs/umwelt_design_constitution.md` Decision heuristic):**简化 = 三操作** —— **虚构**(永不)/ **去虚构**(立刻)/ **删繁**(只有在搞清趣味与代价、判代价不值后才做);**自然解优先,删繁挂 IOU**。注明是"先搭整只蚂蚁当集成测试 / 先做最丰富中段谜题 / 不先做教程"的总法。**树突→胞体塌缩(§2)从已定降级为 provisional**(自然树本身可能是空间汇集谜题,塌缩前未刻画;nuanced——塌缩也逼出"中继漏斗"涌现趣味)。
+- 存 memory:`umwelt-honesty-cost`、`umwelt-decision-forks-in-prose`(此用户偏好散文讨论岔口,少用多选 widget)。
+
+**未完成 / 坑**
+- **F-LEARN 代码未改**(只定了文档)。真改时 **JS sim + Bevy `eval`(`step.rs`)双轨同步 → 重跑 golden oracle ≤1e-5**(单改一边必漂)。这是个独立的代码 TODO,做 E2 学习前先落。
+- **6 个次要 fork** 留 roadmap §5、带推荐,本轮未点:F-WIND(建议化学场层流)/ F-WEBER((L−R) 够用)/ F-ALARM(剂量反转当硬谜题)/ F-NOENTRY(第二地面极性)/ F-CHC(同巢识别缺 CHC 通道)/ F-REVERSE(转身逃替代倒车)。
+- roadmap 是**研究图不是施工 plan**;真搭从 **P0 运动底座 A(先 A1 转向仲裁总线)** 起,现编辑器纯电路即可开工。
+
+**下一步**
+- 审 roadmap 剩余 fork / §2.2 扩硬件账本;或从 **P0 的 A1 转向总线**在编辑器手搭起步(纯电路可验:振荡/读数/成本)。
+- 真做关联学习(E2,test5/6)前,先把 F-LEARN 落到代码(双轨 + oracle)。
+
+---
+
 ## 2026-05-31
 
 **做了什么**
