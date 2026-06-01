@@ -135,19 +135,26 @@ These belong to the review layer. Surface them; don't quietly pick.
 
 **可塑连接（蚂蚁版新增）：** 玩家标记为可塑，指定绑定的 modulator 节点和初始权重。
 
-可塑连接更新规则（每 tick）：
+可塑连接更新规则（每 tick）—— **2026-06-02 改:去掉 `post`、改 depression 主导(F-LEARN 决定,依据见下「可塑突触设计」)**：
 ```
-Δw = η × pre × post × mod
+Δw = −η × pre × mod            // 两因子、突触前;pre 与 mod 同时活 → 压低被门控边(depression)
 w = w + Δw
-w = w + decay × (w_init - w)    // 向先天基线衰减（遗忘）
-w = clamp(w, w_min, w_max)      // Dale's Law 限幅
+w = w + decay × (w_init - w)    // 向先天基线被动衰减(遗忘;注意 ≠ 消退 extinction,后者是另一条反号痕迹)
+w = clamp(w, w_min, w_max)      // 限幅
 ```
+**行为方向(趋近/回避)由玩家搭的 MBON 平衡结构决定,不靠 potentiation。** depression 主导意味着学习是"刻掉"某条默认驱动(与宪法 §2「OFF 是搭出来的」同精神),而非凭空建一条新驱动。
+
+> **⚠ 代码未改(仅文档决定,2026-06-02)。** 现 `src/neural/constants.js` + JS sim 和 Bevy `eval`(`step.rs`)两边**仍是旧 `Δw = η·pre·post·mod`**(potentiation、三因子)。真改时**必须双轨同步**(JS sim 与 Bevy eval 一起改),改完**重跑 golden oracle**(两边 ≤1e-5 对拍——单改一边必漂)。TODO,今天不做。
 
 ### 可塑突触设计
 
 **MVP 在连接层打标记。** 玩家把任意连接勾为"可塑"并绑定一个 modulator，权重在运行时按上面的规则演化。数据模型刻意保留在连接上（`edge.plastic` + `edge.mod_source_id`）而不是做成节点类型——因为未来会新增"蘑菇体节点"，其所有入边默认可塑。到那时，同一个标记由节点类型推导出来即可，不需要迁移数据。
 
 **生物学根据。** 蚂蚁大脑里真正发生学习的是蘑菇体（mushroom body）的 microglomeruli 区域；其他通路基本硬接线。突触在分钟尺度重塑（学习），在数小时到数天尺度衰减（遗忘）。常量按这个时间尺度选。
+
+**为什么去 `post` + 留 depression（F-LEARN,2026-06-02）。** 去掉 `post` = **去虚构**:真实 MB 的 KC→MBON 可塑是**突触前、多巴胺(DAN)门控、与突触后活动无关**的(Hige et al. 2015, *Neuron* 88:985;配对后该突触约 90% depression),`post` 是不属于它的外衣,摘掉它是纠错不是简化。留 **depression 主导 + 方向靠平衡结构** = **选自然解**:不为省事白给 potentiation,MB 本就以抑制/刻除为默认。两份独立研究(2026-06-02 学习子代理 + 用户 navigation brief)都指向这条。依据见 `docs/research/2026-06-02-navigation-wall-brief.md` 与 roadmap `docs/superpowers/specs/2026-06-02-ant-circuit-roadmap-design.md`(§3 E2 / §5 F-LEARN)。
+
+**（B）保留的未来可选进阶。** 若将来某条电路*真的*需要直接增强(potentiation),可走「Dale 符号定方向」的版本(源 inter_exc→增强、inter_inh→压低)。**现在不给** —— 在没有具体电路证明需要它之前,自然解(depression + 平衡结构)是默认(见宪法 Decision heuristic「删繁要挣来位置」)。
 
 **常量硬编码，不暴露给玩家：**
 - `LEARNING_RATE` = 0.01
