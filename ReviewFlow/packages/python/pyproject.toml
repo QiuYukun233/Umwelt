@@ -1,0 +1,10 @@
+[project]
+name = "reviewflow-trace"
+version = "0.1.0"
+description = "Lightweight runtime tracing helpers for ReviewFlow AWS batch review."
+requires-python = ">=3.9"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
