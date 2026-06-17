@@ -1,0 +1,227 @@
+{
+  "schemaVersion": "reviewflow.awsBatchTrace.v0.1",
+  "execution": {
+    "id": "rf-exec-sample-001",
+    "name": "customer-status-migration",
+    "kind": "lambda",
+    "status": "success",
+    "startedAt": "2026-06-17T10:00:00.000Z",
+    "endedAt": "2026-06-17T10:00:07.400Z",
+    "input": {
+      "eventSource": "aws.s3",
+      "s3": "s3://reviewflow-input/customers/status_20260617.csv",
+      "legacySystem": "ruby-oracle",
+      "targetSystem": "python-aws-postgresql"
+    }
+  },
+  "resources": [
+    {
+      "id": "s3.reviewflow-input.customers",
+      "type": "s3",
+      "label": "s3://reviewflow-input/customers/status_20260617.csv"
+    },
+    {
+      "id": "postgres.customers",
+      "type": "postgres_table",
+      "label": "customers"
+    },
+    {
+      "id": "postgres.customer_events",
+      "type": "postgres_table",
+      "label": "customer_events"
+    },
+    {
+      "id": "eventbridge.customer-migration",
+      "type": "eventbridge",
+      "label": "customer-migration-bus"
+    },
+    {
+      "id": "stepfunctions.audit",
+      "type": "stepfunctions",
+      "label": "migration-audit-state-machine"
+    }
+  ],
+  "events": [
+    {
+      "id": "event.0001",
+      "type": "execution.start",
+      "timestamp": "2026-06-17T10:00:00.000Z",
+      "label": "customer-status-migration started",
+      "details": {
+        "awsRequestId": "lambda-request-sample-001"
+      }
+    },
+    {
+      "id": "event.0002",
+      "type": "s3.read",
+      "timestamp": "2026-06-17T10:00:00.180Z",
+      "label": "s3.get_object",
+      "details": {
+        "bucket": "reviewflow-input",
+        "key": "customers/status_20260617.csv",
+        "bytes": 248
+      }
+    },
+    {
+      "id": "event.0003",
+      "type": "db.read",
+      "timestamp": "2026-06-17T10:00:01.060Z",
+      "label": "read customers",
+      "details": {
+        "sqlSummary": "SELECT customer_id, status, migrated_at FROM customers WHERE customer_id = $1",
+        "tables": ["customers"],
+        "rowcount": 1
+      }
+    },
+    {
+      "id": "event.0004",
+      "type": "db.write",
+      "timestamp": "2026-06-17T10:00:01.940Z",
+      "label": "update customer status",
+      "details": {
+        "sqlSummary": "UPDATE customers SET status = $1, migrated_at = $2 WHERE customer_id = $3",
+        "tables": ["customers"],
+        "rowcount": 1
+      }
+    },
+    {
+      "id": "event.0005",
+      "type": "db.write",
+      "timestamp": "2026-06-17T10:00:02.300Z",
+      "label": "insert customer event",
+      "details": {
+        "sqlSummary": "INSERT INTO customer_events(customer_id, event_type, source_system) VALUES ($1, $2, $3)",
+        "tables": ["customer_events"],
+        "rowcount": 1
+      }
+    },
+    {
+      "id": "event.0006",
+      "type": "transaction.commit",
+      "timestamp": "2026-06-17T10:00:02.620Z",
+      "label": "PostgreSQL commit",
+      "details": {
+        "connection": "primary"
+      }
+    },
+    {
+      "id": "event.0007",
+      "type": "eventbridge.event",
+      "timestamp": "2026-06-17T10:00:03.110Z",
+      "label": "events.put_events",
+      "details": {
+        "eventBusName": "customer-migration-bus",
+        "detailType": "CustomerMigrated",
+        "entryCount": 1
+      }
+    },
+    {
+      "id": "event.0008",
+      "type": "stepfunctions.start_execution",
+      "timestamp": "2026-06-17T10:00:03.800Z",
+      "label": "stepfunctions.start_execution",
+      "details": {
+        "stateMachineArn": "arn:aws:states:ap-northeast-1:123456789012:stateMachine:migration-audit",
+        "executionName": "customer-1001-audit"
+      }
+    },
+    {
+      "id": "event.0009",
+      "type": "s3.write",
+      "timestamp": "2026-06-17T10:00:06.900Z",
+      "label": "s3.put_object",
+      "details": {
+        "bucket": "reviewflow-output",
+        "key": "customers/status_20260617.result.json",
+        "bytes": 132
+      }
+    },
+    {
+      "id": "event.0010",
+      "type": "execution.end",
+      "timestamp": "2026-06-17T10:00:07.400Z",
+      "label": "customer-status-migration ended",
+      "details": {
+        "status": "success"
+      }
+    }
+  ],
+  "stateProjections": [
+    {
+      "id": "projection.customers.1001.status",
+      "eventId": "event.0004",
+      "table": "customers",
+      "record": "customer_id=1001",
+      "field": "status",
+      "before": "A",
+      "patch": "A -> active",
+      "after": "active",
+      "certainty": "observed",
+      "source": {
+        "sqlSummary": "UPDATE customers SET status = $1, migrated_at = $2 WHERE customer_id = $3"
+      },
+      "legacy": {
+        "table": "CUSTOMER",
+        "field": "STATUS_CD",
+        "value": "A"
+      }
+    },
+    {
+      "id": "projection.customers.1001.migrated_at",
+      "eventId": "event.0004",
+      "table": "customers",
+      "record": "customer_id=1001",
+      "field": "migrated_at",
+      "before": "null",
+      "patch": "+ current timestamp",
+      "after": "2026-06-17T10:00:01.930Z",
+      "certainty": "observed",
+      "source": {
+        "sqlSummary": "UPDATE customers SET status = $1, migrated_at = $2 WHERE customer_id = $3"
+      },
+      "legacy": {
+        "table": "CUSTOMER",
+        "field": "MIGRATED_AT",
+        "value": "null"
+      }
+    },
+    {
+      "id": "projection.customer_events.1001.event_type",
+      "eventId": "event.0005",
+      "table": "customer_events",
+      "record": "customer_id=1001",
+      "field": "event_type",
+      "before": "omitted",
+      "patch": "+ CUSTOMER_MIGRATED",
+      "after": "CUSTOMER_MIGRATED",
+      "certainty": "observed",
+      "source": {
+        "sqlSummary": "INSERT INTO customer_events(customer_id, event_type, source_system) VALUES ($1, $2, $3)"
+      },
+      "legacy": {
+        "table": "CUSTOMER_EVENT",
+        "field": "EVENT_TYPE",
+        "value": "CUSTOMER_MIGRATED"
+      }
+    },
+    {
+      "id": "projection.customer_events.1001.source_system",
+      "eventId": "event.0005",
+      "table": "customer_events",
+      "record": "customer_id=1001",
+      "field": "source_system",
+      "before": "omitted",
+      "patch": "+ ruby-oracle",
+      "after": "ruby-oracle",
+      "certainty": "observed",
+      "source": {
+        "sqlSummary": "INSERT INTO customer_events(customer_id, event_type, source_system) VALUES ($1, $2, $3)"
+      },
+      "legacy": {
+        "table": "CUSTOMER_EVENT",
+        "field": "SOURCE_SYSTEM",
+        "value": "RUBY_ORACLE"
+      }
+    }
+  ]
+}

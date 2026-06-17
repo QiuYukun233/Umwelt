@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+
+# Build output
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# ReviewFlow generated artifacts
+.reviewflow/
+trace-output/
+graph-output/
+tmp/
+
+# Local Prisma SQLite database
+prisma/dev.db
+prisma/dev.db-journal
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
