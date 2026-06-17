@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "reviewflow.rubyOracleTrace.v0.1",
+  "execution": {
+    "id": "legacy-exec-sample-001",
+    "name": "customer-status-migration",
+    "kind": "ruby-batch",
+    "status": "success",
+    "startedAt": "2026-06-17T09:58:00.000Z",
+    "endedAt": "2026-06-17T09:58:04.100Z",
+    "input": {
+      "sourceFile": "customers/status_20260617.csv",
+      "legacySystem": "ruby-oracle"
+    }
+  },
+  "events": [
+    {
+      "id": "legacy.event.0001",
+      "type": "execution.start",
+      "timestamp": "2026-06-17T09:58:00.000Z",
+      "label": "customer-status-migration started",
+      "details": {
+        "host": "legacy-batch-host"
+      }
+    },
+    {
+      "id": "legacy.event.0002",
+      "type": "file.read",
+      "timestamp": "2026-06-17T09:58:00.220Z",
+      "label": "read customers/status_20260617.csv",
+      "details": {
+        "path": "/batch/input/customers/status_20260617.csv",
+        "bytes": 248
+      }
+    },
+    {
+      "id": "legacy.event.0003",
+      "type": "oracle.read",
+      "timestamp": "2026-06-17T09:58:00.900Z",
+      "label": "read CUSTOMER",
+      "details": {
+        "sqlSummary": "SELECT CUSTOMER_ID, STATUS_CD, MIGRATED_AT FROM CUSTOMER WHERE CUSTOMER_ID = :1",
+        "tables": ["CUSTOMER"],
+        "rowcount": 1
+      }
+    },
+    {
+      "id": "legacy.event.0004",
+      "type": "oracle.write",
+      "timestamp": "2026-06-17T09:58:01.520Z",
+      "label": "update CUSTOMER",
+      "details": {
+        "sqlSummary": "UPDATE CUSTOMER SET STATUS_CD = :1, MIGRATED_AT = :2 WHERE CUSTOMER_ID = :3",
+        "tables": ["CUSTOMER"],
+        "rowcount": 1
+      }
+    },
+    {
+      "id": "legacy.event.0005",
+      "type": "oracle.write",
+      "timestamp": "2026-06-17T09:58:01.880Z",
+      "label": "insert CUSTOMER_EVENT",
+      "details": {
+        "sqlSummary": "INSERT INTO CUSTOMER_EVENT(CUSTOMER_ID, EVENT_TYPE, SOURCE_SYSTEM) VALUES (:1, :2, :3)",
+        "tables": ["CUSTOMER_EVENT"],
+        "rowcount": 1
+      }
+    },
+    {
+      "id": "legacy.event.0006",
+      "type": "transaction.commit",
+      "timestamp": "2026-06-17T09:58:02.100Z",
+      "label": "Oracle commit",
+      "details": {
+        "connection": "legacy"
+      }
+    },
+    {
+      "id": "legacy.event.0007",
+      "type": "file.write",
+      "timestamp": "2026-06-17T09:58:03.400Z",
+      "label": "write result file",
+      "details": {
+        "path": "/batch/output/customers/status_20260617.result.json",
+        "bytes": 118
+      }
+    },
+    {
+      "id": "legacy.event.0008",
+      "type": "execution.end",
+      "timestamp": "2026-06-17T09:58:04.100Z",
+      "label": "customer-status-migration ended",
+      "details": {
+        "status": "success"
+      }
+    }
+  ],
+  "stateProjections": [
+    {
+      "id": "legacy.customer.1001.status_cd",
+      "eventId": "legacy.event.0004",
+      "table": "CUSTOMER",
+      "record": "CUSTOMER_ID=1001",
+      "field": "STATUS_CD",
+      "before": "A",
+      "patch": "kept A",
+      "after": "A",
+      "certainty": "observed",
+      "target": {
+        "table": "customers",
+        "field": "status",
+        "value": "active"
+      },
+      "source": {
+        "sqlSummary": "UPDATE CUSTOMER SET STATUS_CD = :1, MIGRATED_AT = :2 WHERE CUSTOMER_ID = :3"
+      }
+    },
+    {
+      "id": "legacy.customer.1001.migrated_at",
+      "eventId": "legacy.event.0004",
+      "table": "CUSTOMER",
+      "record": "CUSTOMER_ID=1001",
+      "field": "MIGRATED_AT",
+      "before": "null",
+      "patch": "+ current timestamp",
+      "after": "2026-06-17T09:58:01.500Z",
+      "certainty": "observed",
+      "target": {
+        "table": "customers",
+        "field": "migrated_at",
+        "value": "timestamp"
+      },
+      "source": {
+        "sqlSummary": "UPDATE CUSTOMER SET STATUS_CD = :1, MIGRATED_AT = :2 WHERE CUSTOMER_ID = :3"
+      }
+    },
+    {
+      "id": "legacy.customer_event.1001.event_type",
+      "eventId": "legacy.event.0005",
+      "table": "CUSTOMER_EVENT",
+      "record": "CUSTOMER_ID=1001",
+      "field": "EVENT_TYPE",
+      "before": "omitted",
+      "patch": "+ CUSTOMER_MIGRATED",
+      "after": "CUSTOMER_MIGRATED",
+      "certainty": "observed",
+      "target": {
+        "table": "customer_events",
+        "field": "event_type",
+        "value": "CUSTOMER_MIGRATED"
+      },
+      "source": {
+        "sqlSummary": "INSERT INTO CUSTOMER_EVENT(CUSTOMER_ID, EVENT_TYPE, SOURCE_SYSTEM) VALUES (:1, :2, :3)"
+      }
+    },
+    {
+      "id": "legacy.customer_event.1001.source_system",
+      "eventId": "legacy.event.0005",
+      "table": "CUSTOMER_EVENT",
+      "record": "CUSTOMER_ID=1001",
+      "field": "SOURCE_SYSTEM",
+      "before": "omitted",
+      "patch": "+ RUBY_ORACLE",
+      "after": "RUBY_ORACLE",
+      "certainty": "observed",
+      "target": {
+        "table": "customer_events",
+        "field": "source_system",
+        "value": "ruby-oracle"
+      },
+      "source": {
+        "sqlSummary": "INSERT INTO CUSTOMER_EVENT(CUSTOMER_ID, EVENT_TYPE, SOURCE_SYSTEM) VALUES (:1, :2, :3)"
+      }
+    }
+  ]
+}
